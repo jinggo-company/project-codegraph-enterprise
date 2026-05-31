@@ -1,0 +1,222 @@
+// Prisma schema for CodeGraph Enterprise
+// Multi-tenant SaaS with organizations, teams, projects, indexes, audit logs, and billing
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────── Multi-Tenant Core ────────────────
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  teams       Team[]
+  auditLogs   AuditLog[]
+  subscription Subscription?
+  invoices    Invoice[]
+}
+
+model Team {
+  id             String      @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime    @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        Member[]
+  projects       Project[]
+
+  @@unique([organizationId, name])
+}
+
+model Member {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      Role     @default(DEVELOPER)
+  joinedAt  DateTime @default(now())
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+// ──────────────── Projects & Indexes ────────────────
+
+model Project {
+  id          String    @id @default(cuid())
+  teamId      String
+  name        String
+  gitUrl      String
+  status      ProjectStatus @default(PENDING_INDEX)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  indexes     Index[]
+
+  @@unique([teamId, name])
+}
+
+enum ProjectStatus {
+  PENDING_INDEX
+  INDEXING
+  READY
+  FAILED
+}
+
+model Index {
+  id            String      @id @default(cuid())
+  projectId     String
+  type          IndexType   @default(FULL)
+  status        IndexStatus @default(QUEUED)
+  triggerSource TriggerSource @default(MANUAL)
+  createdAt     DateTime    @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+  error         String?
+
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  snapshots     Snapshot[]
+  syncLogs      SyncLog[]
+
+  stats         IndexStats?
+}
+
+model IndexStats {
+  id             String  @id @default(cuid())
+  indexId        String  @unique
+  filesScanned   Int     @default(0)
+  symbolsIndexed Int     @default(0)
+  callGraphEdges Int     @default(0)
+  sqliteSizeBytes BigInt @default(0)
+  durationMs     Int     @default(0)
+
+  index          Index   @relation(fields: [indexId], references: [id], onDelete: Cascade)
+}
+
+enum IndexType {
+  FULL
+  INCREMENTAL
+  CLEANUP
+}
+
+enum IndexStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum TriggerSource {
+  WEBHOOK
+  MANUAL
+  WATCHER
+  SCHEDULE
+}
+
+model Snapshot {
+  id        String   @id @default(cuid())
+  indexId   String
+  storageKey String  // MinIO/S3 object key
+  sizeBytes BigInt
+  createdAt DateTime @default(now())
+
+  index     Index    @relation(fields: [indexId], references: [id], onDelete: Cascade)
+}
+
+model SyncLog {
+  id          String   @id @default(cuid())
+  indexId     String
+  filesChanged Int    @default(0)
+  durationMs  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  index       Index    @relation(fields: [indexId], references: [id], onDelete: Cascade)
+}
+
+// ──────────────── Audit Logs ────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  action         String
+  entityType     String
+  entityId       String?
+  details        Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ──────────────── Billing ────────────────
+
+model Subscription {
+  id             String         @id @default(cuid())
+  organizationId String         @unique
+  plan           PlanType       @default(FREE)
+  status         SubscriptionStatus @default(ACTIVE)
+  currentPeriodEnd DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoices       Invoice[]
+}
+
+enum PlanType {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIAL
+}
+
+model Invoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  subscriptionId String?
+  amount         Int      // in cents
+  currency       String   @default("CNY")
+  status         InvoiceStatus @default(PENDING)
+  provider       String?  // alipay, stripe
+  providerRef    String?  // external payment reference
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}

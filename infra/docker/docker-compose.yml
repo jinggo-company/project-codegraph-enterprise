@@ -1,0 +1,73 @@
+name: codegraph-enterprise
+
+services:
+  # ──────────── PostgreSQL ────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: cg-postgres
+    environment:
+      POSTGRES_USER: codegraph
+      POSTGRES_PASSWORD: codegraph_dev
+      POSTGRES_DB: codegraph
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codegraph"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────── Redis ────────────
+  redis:
+    image: redis:7-alpine
+    container_name: cg-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ──────────── MinIO (S3-compatible object storage) ────────────
+  minio:
+    image: minio/minio:latest
+    container_name: cg-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: codegraph
+      MINIO_ROOT_PASSWORD: codegraph_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────── MinIO Init (create buckets) ────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: cg-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 codegraph codegraph_dev &&
+        mc mb --ignore-existing local/codegraph-indexes &&
+        mc mb --ignore-existing local/codegraph-snapshots &&
+        echo 'MinIO buckets created'
+      "
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
