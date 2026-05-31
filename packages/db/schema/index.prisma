@@ -10,6 +10,55 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ──────────────── Users & Authentication ────────────────
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String?
+  avatarUrl     String?
+  emailVerified DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  oauthAccounts OAuthAccount[]
+  apiKeys       ApiKey[]
+  members       Member[]
+  auditLogs     AuditLog[]
+}
+
+model OAuthAccount {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String   // "github", "gitlab", "oidc"
+  providerId   String   // provider-specific user ID
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+}
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  keyHash     String    // hashed version of the actual key
+  prefix      String    // first 8 chars of the raw key (for display)
+  role        Role      @default(DEVELOPER)
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 // ──────────────── Multi-Tenant Core ────────────────
 
 model Organization {
@@ -46,6 +95,7 @@ model Member {
   joinedAt  DateTime @default(now())
 
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([teamId, userId])
 }
@@ -64,6 +114,7 @@ model Project {
   teamId      String
   name        String
   gitUrl      String
+  branch      String    @default("main")
   status      ProjectStatus @default(PENDING_INDEX)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -79,6 +130,7 @@ enum ProjectStatus {
   INDEXING
   READY
   FAILED
+  DELETED
 }
 
 model Index {
@@ -166,6 +218,7 @@ model AuditLog {
   createdAt      DateTime @default(now())
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt])
   @@index([entityType, entityId])

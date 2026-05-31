@@ -6,6 +6,7 @@
   "main": "./src/client.ts",
   "types": "./src/client.ts",
   "scripts": {
+    "build": "tsc",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -16,6 +17,7 @@
     "@prisma/client": "^5.15.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "prisma": "^5.15.0",
     "typescript": "^5.5.0"
   }
