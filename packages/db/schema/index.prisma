@@ -224,6 +224,37 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
+// ──────────────── Index Scheduling (IDX) ────────────────
+
+model IndexJob {
+  id          String    @id @default(cuid())
+  projectId   String
+  indexId     String?
+  type        IndexType @default(FULL)
+  trigger     TriggerSource
+  status      IndexJobStatus @default(PENDING)
+  priority    Int       @default(0)
+  retries     Int       @default(0)
+  maxRetries  Int       @default(3)
+  error       String?
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([status])
+  @@index([projectId, status])
+  @@index([createdAt])
+}
+
+enum IndexJobStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 // ──────────────── Billing ────────────────
 
 model Subscription {

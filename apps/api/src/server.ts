@@ -9,6 +9,8 @@ import authRoutes from './modules/auth/index.js';
 import orgRoutes from './modules/organizations/index.js';
 import teamRoutes from './modules/teams/index.js';
 import projectRoutes from './modules/projects/index.js';
+import indexRoutes from './modules/indexes/index.js';
+import webhookRoutes from './modules/webhooks/index.js';
 
 const app = Fastify({
   logger: {
@@ -69,6 +71,8 @@ await app.register(authRoutes);
 await app.register(orgRoutes);
 await app.register(teamRoutes);
 await app.register(projectRoutes);
+await app.register(indexRoutes);
+await app.register(webhookRoutes);
 
 // Start server
 const port = parseInt(process.env.PORT ?? '4000', 10);
