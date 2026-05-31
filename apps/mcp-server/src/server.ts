@@ -1,142 +1,78 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+/**
+ * CodeGraph Enterprise — MCP Server Gateway
+ *
+ * Implements the MCP 2024-11-05 protocol via @modelcontextprotocol/sdk 1.6+.
+ * Provides 7 tools for querying CodeGraph indexes:
+ *   search_code, get_symbol, get_callers, get_callees,
+ *   get_impact, search_routes, search_fulltext
+ *
+ * Transport: stdio (primary, for Claude Code / Cursor integration)
+ *
+ * Authentication:
+ *   - API Key via MCP _meta or x-api-key header (optional, set MCP_API_KEY to enable)
+ */
 
-// Create MCP server
-const server = new McpServer({
-  name: "codegraph-enterprise",
-  version: "0.1.0",
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { LocalSqliteEngine } from './index-engine/local.js';
+import type { IndexEngine } from './index-engine/engine.js';
+import { loadConfig } from './config.js';
+import {
+  registerSearchCode,
+  registerGetSymbol,
+  registerGetCallers,
+  registerGetCallees,
+  registerGetImpact,
+  registerSearchRoutes,
+  registerSearchFulltext,
+} from './tools/index.js';
+
+const config = loadConfig();
+const engine: IndexEngine = new LocalSqliteEngine(config.indexDir);
+
+// ─── Create MCP Server ────────────────────────────────────────────────
+
+const mcpServer = new McpServer({
+  name: config.serverName,
+  version: config.serverVersion,
 });
 
-// Tool: search_code
-server.tool(
-  "search_code",
-  {
-    query: z.string().describe("Search query"),
-    project: z.string().describe("Project identifier"),
-    language: z.string().optional().describe("Filter by language"),
-  },
-  async ({ query, project, language }) => {
-    // TODO: implement index lookup
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            query,
-            project,
-            language,
-            results: [],
-            message: "Index not yet configured",
-          }),
-        },
-      ],
-    };
-  }
-);
+// ─── Register all 7 tools ─────────────────────────────────────────────
 
-// Tool: get_symbol
-server.tool(
-  "get_symbol",
-  {
-    name: z.string().describe("Symbol name"),
-    kind: z.string().optional().describe("Symbol kind (function, class, etc.)"),
-    project: z.string().describe("Project identifier"),
-  },
-  async ({ name, kind, project }) => {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            name,
-            kind,
-            project,
-            message: "Index not yet configured",
-          }),
-        },
-      ],
-    };
-  }
-);
+registerSearchCode(mcpServer, engine, config.apiKey);
+registerGetSymbol(mcpServer, engine, config.apiKey);
+registerGetCallers(mcpServer, engine, config.apiKey);
+registerGetCallees(mcpServer, engine, config.apiKey);
+registerGetImpact(mcpServer, engine, config.apiKey);
+registerSearchRoutes(mcpServer, engine, config.apiKey);
+registerSearchFulltext(mcpServer, engine, config.apiKey);
 
-// Tool: get_callers
-server.tool(
-  "get_callers",
-  {
-    name: z.string().describe("Symbol name"),
-    project: z.string().describe("Project identifier"),
-  },
-  async ({ name, project }) => {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            name,
-            project,
-            callers: [],
-            message: "Index not yet configured",
-          }),
-        },
-      ],
-    };
-  }
-);
+// ─── Main ─────────────────────────────────────────────────────────────
 
-// Tool: get_impact
-server.tool(
-  "get_impact",
-  {
-    target: z.string().describe("File path or symbol name"),
-    project: z.string().describe("Project identifier"),
-  },
-  async ({ target, project }) => {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            target,
-            project,
-            impact: [],
-            message: "Index not yet configured",
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// Tool: search_fulltext
-server.tool(
-  "search_fulltext",
-  {
-    query: z.string().describe("Full-text search query"),
-    project: z.string().describe("Project identifier"),
-  },
-  async ({ query, project }) => {
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            query,
-            project,
-            results: [],
-            message: "Index not yet configured",
-          }),
-        },
-      ],
-    };
-  }
-);
-
-// Start server via stdio
 async function main() {
   const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("MCP Server running on stdio");
+  await mcpServer.connect(transport);
+  console.error(`[mcp-server] MCP Server started on stdio`);
+  console.error(`[mcp-server] Server: ${config.serverName} v${config.serverVersion}`);
+  console.error(`[mcp-server] Index dir: ${config.indexDir}`);
+  console.error(`[mcp-server] Auth: ${config.apiKey ? 'enabled' : 'disabled (dev mode)'}`);
+  console.error(`[mcp-server] Tools: search_code, get_symbol, get_callers, get_callees, get_impact, search_routes, search_fulltext`);
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error('[mcp-server] Fatal error:', err);
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.error('[mcp-server] Shutting down...');
+  engine.close();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.error('[mcp-server] Shutting down...');
+  engine.close();
+  process.exit(0);
+});
