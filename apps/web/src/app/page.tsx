@@ -1,8 +1,12 @@
-export default function Home() {
-  return (
-    <main style={{ padding: '2rem', fontFamily: 'system-ui' }}>
-      <h1>CodeGraph Enterprise</h1>
-      <p>Dashboard placeholder — coming soon.</p>
-    </main>
-  );
+'use client';
+
+import { redirect } from 'next/navigation';
+import { useAppStore } from '@/stores/appStore';
+
+export default function HomePage() {
+  const { isAuthenticated } = useAppStore();
+  if (!isAuthenticated) {
+    redirect('/login');
+  }
+  redirect('/dashboard');
 }
