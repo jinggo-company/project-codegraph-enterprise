@@ -1,112 +1,67 @@
-# CodeGraph Enterprise — TECH_STACK.md
+# TECH_STACK.md — CodeGraph Enterprise
 
-> 对应任务: T-2026-00130 | 项目: P-2026-00020 (CodeGraph Enterprise)
-> 基于 PRD: R-2026-00084
-> 创建日期: 2026-06-01
+## Overview
 
-## 1. 项目定位
+Full-stack TypeScript monorepo for a code knowledge graph platform.
 
-CodeGraph Enterprise 是基于开源 [CodeGraph](https://github.com/colbymchenry/codegraph) 构建的企业级代码知识图谱 SaaS 平台。为 AI 编程工具（Claude Code、Codex、Cursor 等）提供预索引代码知识图谱，实现集中索引管理、多租户隔离、CI/CD 自动索引、审计日志和团队协作。
+## Core Stack
 
-## 2. 核心技术栈
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Runtime | Node.js | >= 20 |
+| Language | TypeScript | >= 5.3 |
+| Package Manager | pnpm | >= 9 |
+| Build System | Turborepo | latest |
+| Database | PostgreSQL | >= 15 |
+| ORM | Prisma | >= 5 |
+| Cache/Queue | Redis | >= 7 |
+| Queue Library | BullMQ | >= 4 |
+| API Framework | Fastify | >= 4 |
+| Frontend | Next.js | >= 14 |
+| Validation | Zod | >= 3 |
+| Test Framework | Vitest | >= 1 |
+| CSS | Tailwind CSS | >= 3 |
+| Auth | NextAuth.js v5 | latest |
 
-### 2.1 索引引擎（上游依赖）
+## Key Dependencies (API)
 
-| 组件 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| CodeGraph Core | TypeScript + Rust | 最新稳定版（跟踪 upstream） | 符号解析、调用图构建、知识图谱索引 |
-| SQLite | C 库（嵌入式） | 3.45+ | 本地索引存储，FTS5 全文搜索 |
-| tree-sitter | C/Rust | 0.22+ | 多语言语法解析（20+ 语言支持） |
-
-### 2.2 后端服务
-
-| 组件 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| 运行时 | Node.js | 22 LTS | 托管索引服务、MCP Server 网关 |
-| 框架 | Fastify | 4.28+ | 高性能 HTTP/API 服务（替代 Express，更适合高吞吐场景） |
-| 语言 | TypeScript | 5.5+ | 全栈类型安全 |
-| 数据库 | PostgreSQL | 16+ | 多租户元数据、用户管理、审计日志、计费 |
-| ORM | Prisma | 5.15+ | 类型安全数据库访问 |
-| MCP SDK | @modelcontextprotocol/sdk | 1.6+ | MCP Server/Client 协议实现 |
-| 任务队列 | BullMQ | 5.0+ | Redis-backed 任务调度（索引构建、CI/CD 触发） |
-| 缓存/队列存储 | Redis | 7.2+ | 会话缓存、任务队列、索引状态锁 |
-
-### 2.3 前端仪表板
-
-| 组件 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| 框架 | Next.js | 15 App Router | SSR/SSG，适合管理面板 |
-| UI 库 | React | 19 | 组件化开发 |
-| 样式 | Tailwind CSS | 3.4+ | 原子化 CSS，快速迭代 |
-| 组件库 | shadcn/ui | 最新 | 基于 Radix UI 的可访问组件 |
-| 状态管理 | Zustand | 4.5+ | 轻量级状态管理 |
-| 图表 | Recharts | 2.12+ | 数据可视化（索引统计、使用分析） |
-| 认证 | NextAuth.js v5 | 5.0+ | OAuth/SSO 集成（GitHub/GitLab/企业 IdP） |
-
-### 2.4 基础设施
-
-| 组件 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| 容器化 | Docker | 26+ | 服务容器化部署 |
-| 编排 | Docker Compose | 2.27+ | MVP 阶段 |
-| CI/CD | GitHub Actions | latest | 自动索引触发、测试流水线 |
-| 反向代理 | Nginx | 1.25+ | SSL 终止、路由分发 |
-| 日志 | Pino + Loki | 最新 | 结构化日志采集 |
-| 监控 | Prometheus + Grafana | 最新 | 服务指标监控 |
-| 对象存储 | MinIO / S3 兼容 | 最新 | 索引快照存储、备份 |
-
-### 2.5 支付与计费
-
-| 组件 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| 支付网关 | 支付宝 SDK / Stripe | 最新 | 订阅支付（国内优先支付宝，海外 Stripe） |
-| Webhook | Fastify webhook handler | 内置 | 支付状态回调处理 |
-
-## 3. 依赖关系图
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      前端仪表板 (Next.js)                     │
-│              多租户管理 / 索引监控 / 审计 / 计费                  │
-└──────────────┬──────────────────────────────┬────────────────┘
-               │ REST/GraphQL                  │ WebSocket
-               ▼                               ▼
-┌──────────────────────────────┐  ┌────────────────────────────┐
-│   API 网关 (Fastify + TS)     │  │   MCP Server 网关           │
-│  ├─ 用户/认证                  │  │  ├─ Claude Code 集成        │
-│  ├─ 项目/团队管理               │  │  ├─ Cursor 集成            │
-│  ├─ 索引调度                   │  │  ├─ Codex 集成             │
-│  ├─ 审计日志                   │  │  └─ 其他 MCP 客户端         │
-│  └─ 计费/订阅                  │  │
-└───────┬──────────────┬───────┘  └───────────┬────────────────┘
-        │              │                      │
-        ▼              ▼                      ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────────────────┐
-│ PostgreSQL   │ │    Redis     │ │   CodeGraph 索引引擎       │
-│ (多租户元数据) │ │ (缓存/队列)   │ │ (TS + Rust + SQLite)      │
-└──────────────┘ └──────────────┘ │  ├─ 符号解析                │
-                                 │  ├─ 调用图构建              │
-                                 │  ├─ 文件监听 (inotify等)    │
-                                 │  └─ FTS5 全文搜索           │
-                                 └────────────────────────────┘
+```json
+{
+  "fastify": "^4.x",
+  "@fastify/cors": "^9.x",
+  "@fastify/cookie": "^9.x",
+  "@fastify/swagger": "^8.x",
+  "@fastify/swagger-ui": "^3.x",
+  "bullmq": "^4.x",
+  "ioredis": "^5.x",
+  "zod": "^3.x",
+  "@fastify/jwt": "^8.x"
+}
 ```
 
-## 4. 开发工具
+## Key Dependencies (Worker)
 
-| 工具 | 用途 |
-|------|------|
-| pnpm | 包管理（workspace monorepo） |
-| ESLint + Prettier | 代码质量 |
-| Vitest | 单元测试 |
-| Playwright | E2E 测试 |
-| Docker Compose | 本地开发环境 |
-| tRPC (可选) | 类型安全 API |
+```json
+{
+  "bullmq": "^4.x",
+  "ioredis": "^5.x",
+  "tree-sitter": "^0.20.x",
+  "@tree-sitter-grammars/*": "latest"
+}
+```
 
-## 5. 技术风险与缓解
+## Key Dependencies (DB)
 
-| 风险 | 影响 | 缓解方案 |
-|------|------|----------|
-| 上游 CodeGraph 单人维护 | 核心功能可能停滞 | fork 维护、关注社区 PR |
-| MCP 协议版本碎片化 | 各 agent 兼容性 | 实现协议适配层，抽象 MCP 版本差异 |
-| Node.js 单线程索引构建 | 大型代码库索引慢 | 多 worker 进程、增量索引 |
-| 国内 AI 工具渗透率低 | 市场需求不足 | 同时支持国际版 + 教育市场 |
+```json
+{
+  "@prisma/client": "^5.x",
+  "prisma": "^5.x"
+}
+```
+
+## Infrastructure
+
+- **Container**: Docker + docker-compose
+- **Storage**: MinIO (S3-compatible)
+- **CI/CD**: GitHub Actions
+- **Monitoring**: OpenTelemetry + Prometheus
