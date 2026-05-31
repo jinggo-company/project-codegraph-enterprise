@@ -1,7 +1,14 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import authPlugin from './plugins/auth.js';
+import rbacPlugin from './plugins/rbac.js';
+import authRoutes from './modules/auth/index.js';
+import orgRoutes from './modules/organizations/index.js';
+import teamRoutes from './modules/teams/index.js';
+import projectRoutes from './modules/projects/index.js';
 
 const app = Fastify({
   logger: {
@@ -18,6 +25,8 @@ await app.register(cors, {
   origin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 });
+
+await app.register(cookie);
 
 await app.register(swagger, {
   openapi: {
@@ -36,6 +45,12 @@ await app.register(swaggerUi, {
   routePrefix: '/docs',
 });
 
+// Auth plugin
+await app.register(authPlugin);
+
+// RBAC plugin
+await app.register(rbacPlugin);
+
 // Health check
 app.get('/health', async () => ({
   status: 'ok',
@@ -49,6 +64,12 @@ app.get('/api', async () => ({
   version: '0.1.0',
 }));
 
+// Register modules
+await app.register(authRoutes);
+await app.register(orgRoutes);
+await app.register(teamRoutes);
+await app.register(projectRoutes);
+
 // Start server
 const port = parseInt(process.env.PORT ?? '4000', 10);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -60,3 +81,5 @@ try {
   app.log.error(err);
   process.exit(1);
 }
+
+export { app };
