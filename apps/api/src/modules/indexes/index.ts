@@ -67,6 +67,12 @@ export default async function indexRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ code: 'FORBIDDEN', message: 'Access denied' });
       }
 
+      // RBAC role check: viewer cannot trigger builds
+      const role = membership.role.toLowerCase();
+      if (role === 'viewer') {
+        return reply.code(403).send({ code: 'FORBIDDEN', message: 'Viewer role cannot trigger index builds' });
+      }
+
       // Rate limit check
       const withinRate = await checkRateLimit(projectId);
       if (!withinRate) {

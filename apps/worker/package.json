@@ -15,7 +15,8 @@
     "@codegraph/types": "workspace:*",
     "@codegraph/db": "workspace:*",
     "bullmq": "^5.0.0",
-    "ioredis": "^5.3.0"
+    "ioredis": "^5.3.0",
+    "minio": "^8.0.0"
   },
   "devDependencies": {
     "@codegraph/config": "workspace:*",

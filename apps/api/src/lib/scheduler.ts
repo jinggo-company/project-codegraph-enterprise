@@ -11,6 +11,7 @@ const connection = new Redis(redisUrl, {
 });
 
 // ─── Three Queues ─────────────────────────────────────────────────────
+// Queue names must match apps/worker/src/worker.ts
 
 export const fullIndexQueue = new Queue('index-full', { connection });
 
@@ -42,14 +43,16 @@ const defaultConfig: QueueConfig = {
 
 // ─── Enqueue ──────────────────────────────────────────────────────────
 
-export async function enqueueIndexJob(job: {
+export interface IndexJobPayload {
   id: string;
   projectId: string;
   indexId: string | null;
   type: string;
   trigger: string;
   priority: number;
-}): Promise<Job> {
+}
+
+export async function enqueueIndexJob(job: IndexJobPayload): Promise<Job> {
   const queue = getQueueForType(job.type);
   return queue.add(
     `index-${job.type.toLowerCase()}`,
@@ -131,7 +134,7 @@ export async function getQueueStats(): Promise<Record<string, Record<string, num
 
 // ─── Helper ───────────────────────────────────────────────────────────
 
-function getQueueForType(type: string): typeof fullIndexQueue {
+export function getQueueForType(type: string): typeof fullIndexQueue {
   switch (type) {
     case 'INCREMENTAL':
       return incrementalIndexQueue;
@@ -141,3 +144,6 @@ function getQueueForType(type: string): typeof fullIndexQueue {
       return fullIndexQueue;
   }
 }
+
+// Re-export connection for tests
+export { connection };
