@@ -308,4 +308,66 @@ describe('IDX - Index Scheduler API + BullMQ', () => {
     const body = res.json();
     expect(body.code).toBe('NOT_FOUND');
   });
+
+  // IDX-007: Forbidden access (viewer role)
+  it('IDX-007: Viewer role attempting build returns 403', async () => {
+    mocks.prisma.project.findFirst.mockResolvedValue({ ...TEST_PROJECT, team: { ...TEST_TEAM, organization: TEST_ORG } });
+    mocks.prisma.member.findFirst.mockResolvedValue({ ...TEST_MEMBER_DEV, role: 'VIEWER' });
+
+    const authHeader = getAuthHeader('user-001', 'viewer');
+    const res = await app.inject({ method: 'POST', url: '/api/projects/proj-001/indexes/build', headers: authHeader });
+
+    expect(res.statusCode).toBe(403);
+    const body = res.json();
+    expect(body.code).toBe('FORBIDDEN');
+  });
+
+  // IDX-008: Sync without prior completed index returns 400
+  it('IDX-008: Sync with no prior completed index returns 400', async () => {
+    mocks.prisma.project.findFirst.mockResolvedValue({ ...TEST_PROJECT, team: { ...TEST_TEAM, organization: TEST_ORG } });
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.findFirst.mockResolvedValue(null);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/projects/proj-001/indexes/sync', headers: authHeader });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.message).toContain('No completed index found');
+  });
+
+  // IDX-009: Index job priority ordering
+  it('IDX-009: Enqueued full index has correct priority', async () => {
+    mocks.prisma.project.findFirst.mockResolvedValue({ ...TEST_PROJECT, team: { ...TEST_TEAM, organization: TEST_ORG } });
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.create.mockResolvedValue(TEST_INDEX);
+    mocks.prisma.project.update.mockResolvedValue({ ...TEST_PROJECT, status: 'INDEXING' });
+
+    const authHeader = getAuthHeader('user-001');
+    await app.inject({ method: 'POST', url: '/api/projects/proj-001/indexes/build', headers: authHeader });
+
+    expect(mocks.enqueueIndexJob).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'FULL', priority: 0 })
+    );
+  });
+
+  // IDX-010: Index trigger source tracking
+  it('IDX-010: Build index sets triggerSource to MANUAL', async () => {
+    mocks.prisma.project.findFirst.mockResolvedValue({ ...TEST_PROJECT, team: { ...TEST_TEAM, organization: TEST_ORG } });
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.create.mockResolvedValue(TEST_INDEX);
+    mocks.prisma.project.update.mockResolvedValue({ ...TEST_PROJECT, status: 'INDEXING' });
+
+    const authHeader = getAuthHeader('user-001');
+    await app.inject({ method: 'POST', url: '/api/projects/proj-001/indexes/build', headers: authHeader });
+
+    expect(mocks.prisma.index.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          triggerSource: 'MANUAL',
+          type: 'FULL',
+        }),
+      })
+    );
+  });
 });
