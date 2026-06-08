@@ -119,10 +119,69 @@ model Project {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  indexes     Index[]
+  team            Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  indexes         Index[]
+  webhookConfigs  WebhookConfig[]
 
   @@unique([teamId, name])
+}
+
+// ──────────────── Webhook Configuration ────────────────
+
+model WebhookConfig {
+  id              String        @id @default(cuid())
+  projectId       String
+  provider        WebhookProvider  // github | gitlab | ci
+  secret          String?         // HMAC / token secret
+  enabled         Boolean         @default(true)
+  branchFilter    Json?           // { "allow": ["main", "develop"], "deny": [] }
+  indexType       IndexType       @default(INCREMENTAL)
+  priority        Int             @default(3)
+  dedupWindowSec  Int             @default(60)  // idempotency window in seconds
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, provider])
+  @@index([projectId, enabled])
+}
+
+enum WebhookProvider {
+  GITHUB
+  GITLAB
+  CI
+}
+
+// ──────────────── Webhook Event Log ────────────────
+
+model WebhookEvent {
+  id            String          @id @default(cuid())
+  projectId     String?
+  configId      String?
+  provider      WebhookProvider
+  event         String          // push, pull_request, etc.
+  commit        String?         // commit SHA
+  branch        String?
+  dedupKey      String?         // repo:branch:sha for idempotency
+  action        WebhookAction   // queued | ignored | rejected | error
+  reason        String?         // why ignored / rejected
+  indexId       String?
+  jobId         String?
+  rawPayload    Json?           // stored for debugging
+  ip            String?
+  createdAt     DateTime        @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([dedupKey])
+  @@index([action, createdAt])
+}
+
+enum WebhookAction {
+  QUEUED
+  IGNORED
+  REJECTED
+  ERROR
 }
 
 enum ProjectStatus {

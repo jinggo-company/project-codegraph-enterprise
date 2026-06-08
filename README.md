@@ -13,7 +13,7 @@ CodeGraph Enterprise 是面向中小研发团队的代码知识图谱 SaaS 平�
 | F0 架构设计 | T-2026-00262 | ✅ done |
 | F1 多租户 SaaS 平台（团队注册、项目管理、角色权限） | T-2026-00263 | ✅ 完成 |
 | F2 集中索引管理（Web 控制台、索引状态、手动触发重建） | T-2026-00264 | pending |
-| F3 CI/CD 自动索引构建（GitHub/GitLab Webhook、分支过滤） | T-2026-00265 | pending |
+| F3 CI/CD 自动索引构建（GitHub/GitLab Webhook、分支过滤） | T-2026-00265 | ✅ 完成 |
 
 ## 快速开始
 
