@@ -1,7 +1,27 @@
 # CodeGraph Enterprise — TEST_REPORT.md
 
-> 对应任务: T-2026-00263 | 项目: P-2026-00034 (CodeGraph Enterprise)
+> 对应任务: T-2026-00263, T-2026-00264 | 项目: P-2026-00034 (CodeGraph Enterprise)
 > 更新日期: 2026-06-08
+
+## T-2026-00264: F2 集中索引管理
+
+### 测试执行结果
+
+| 模块 | 用例数 | 通过 | 失败 | 说明 |
+|------|--------|------|------|------|
+| IDX 索引管理 F2 | 14 | 14 | 0 | 组织级索引列表(分页/过滤)/取消索引/重建索引 |
+| **T-2026-00264 总计** | **14** | **14** | **0** | |
+
+### 测试命令
+```
+pnpm run --filter @codegraph/api test
+✓ test/index.test.ts (29 tests) 82ms
+✓ test/api.test.ts (21 tests) 77ms
+✓ test/e2e-audit-billing.test.ts (25 tests) 13ms
+
+npx turbo build
+Tasks: 6 successful, 6 total
+```
 
 ## T-2026-00263: 多租户 SaaS 平台（团队注册、项目管理、角色权限）
 

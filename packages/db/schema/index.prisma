@@ -142,6 +142,7 @@ model Index {
   createdAt     DateTime    @default(now())
   startedAt     DateTime?
   completedAt   DateTime?
+  updatedAt     DateTime    @updatedAt
   error         String?
 
   project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -159,6 +160,9 @@ model IndexStats {
   callGraphEdges Int     @default(0)
   sqliteSizeBytes BigInt @default(0)
   durationMs     Int     @default(0)
+  languages      Json?   // { "TypeScript": 400, "Python": 300, ... }
+
+  @@index([indexId])
 
   index          Index   @relation(fields: [indexId], references: [id], onDelete: Cascade)
 }

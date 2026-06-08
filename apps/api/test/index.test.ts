@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
       findFirst: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      count: vi.fn(),
     },
     indexStats: {
       findUnique: vi.fn(),
@@ -369,5 +371,200 @@ describe('IDX - Index Scheduler API + BullMQ', () => {
         }),
       })
     );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// F2 TESTS (IDX-011 ~ IDX-020) — T-2026-00264
+// List org indexes, cancel, rebuild
+// ═══════════════════════════════════════════════════════════
+
+describe('F2 - Org Index List (IDX-011)', () => {
+  it('IDX-011: GET /api/organizations/:orgId/indexes lists all indexes', async () => {
+    const mockIndexes = [
+      {
+        id: 'idx-001', projectId: 'proj-001', type: 'FULL', status: 'COMPLETED',
+        triggerSource: 'MANUAL', createdAt: new Date(), updatedAt: new Date(),
+        project: { id: 'proj-001', name: 'test-project', gitUrl: 'https://github.com/test/repo.git', team: { name: 'default' } },
+        stats: { id: 's-1', filesScanned: 1250, symbolsIndexed: 8432, callGraphEdges: 15620, sqliteSizeBytes: 2048000, durationMs: 45000 },
+        snapshots: [],
+      },
+      {
+        id: 'idx-002', projectId: 'proj-001', type: 'FULL', status: 'RUNNING',
+        triggerSource: 'MANUAL', createdAt: new Date(), updatedAt: new Date(),
+        project: { id: 'proj-001', name: 'test-project', gitUrl: 'https://github.com/test/repo.git', team: { name: 'default' } },
+        stats: null, snapshots: [],
+      },
+    ];
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.findMany.mockResolvedValue(mockIndexes);
+    mocks.prisma.index.count.mockResolvedValue(2);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'GET', url: '/api/organizations/org-001/indexes', headers: authHeader });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data).toHaveLength(2);
+    expect(body.total).toBe(2);
+    expect(body.page).toBe(1);
+  });
+
+  it('IDX-011b: GET org indexes with status filter', async () => {
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.findMany.mockResolvedValue([]);
+    mocks.prisma.index.count.mockResolvedValue(0);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'GET', url: '/api/organizations/org-001/indexes?status=COMPLETED', headers: authHeader });
+
+    expect(res.statusCode).toBe(200);
+    expect(mocks.prisma.index.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'COMPLETED' }),
+      })
+    );
+  });
+
+  it('IDX-011c: GET org indexes returns 403 for non-member', async () => {
+    mocks.prisma.member.findFirst.mockResolvedValue(null);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'GET', url: '/api/organizations/org-001/indexes', headers: authHeader });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('IDX-011d: GET org indexes returns 401 without auth', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/organizations/org-001/indexes' });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('F2 - Cancel Index (IDX-012)', () => {
+  const QUEUED_INDEX = {
+    id: 'idx-queued', projectId: 'proj-001', type: 'FULL', status: 'QUEUED',
+    triggerSource: 'MANUAL', createdAt: new Date(), updatedAt: new Date(), error: null,
+    project: { id: 'proj-001', teamId: 'team-001', name: 'test-project', gitUrl: 'x', branch: 'main', status: 'INDEXING', createdAt: new Date(), updatedAt: new Date(), team: { id: 'team-001', organizationId: 'org-001' } },
+  };
+  const RUNNING_INDEX = { ...QUEUED_INDEX, id: 'idx-running', status: 'RUNNING' };
+  const COMPLETED_INDEX = { ...QUEUED_INDEX, id: 'idx-completed', status: 'COMPLETED' };
+
+  it('IDX-012: POST /api/indexes/:id/cancel cancels a QUEUED index', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(QUEUED_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.update.mockResolvedValue({ ...QUEUED_INDEX, status: 'FAILED', error: 'Cancelled by user' });
+    mocks.prisma.index.count.mockResolvedValue(0);
+    mocks.prisma.project.update.mockResolvedValue({ ...TEST_PROJECT, status: 'PENDING_INDEX' });
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-queued/cancel', headers: authHeader });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.status).toBe('FAILED');
+    expect(body.data.error).toBe('Cancelled by user');
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'index:cancelled' }));
+  });
+
+  it('IDX-012b: POST cancel a RUNNING index', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(RUNNING_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.update.mockResolvedValue({ ...RUNNING_INDEX, status: 'FAILED', error: 'Cancelled by user' });
+    mocks.prisma.index.count.mockResolvedValue(1); // still has queued
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-running/cancel', headers: authHeader });
+
+    expect(res.statusCode).toBe(200);
+    // Project status should NOT change since there's still a queued index
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+  });
+
+  it('IDX-012c: POST cancel returns 400 for already COMPLETED index', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(COMPLETED_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-completed/cancel', headers: authHeader });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.code).toBe('BAD_REQUEST');
+    expect(body.message).toContain('Cannot cancel');
+  });
+
+  it('IDX-012d: POST cancel returns 404 for non-existent index', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(null);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/nonexistent/cancel', headers: authHeader });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('IDX-012e: POST cancel returns 403 for non-member', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(QUEUED_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue(null);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-queued/cancel', headers: authHeader });
+
+    expect(res.statusCode).toBe(403);
+  });
+});
+
+describe('F2 - Rebuild Index (IDX-013)', () => {
+  const COMPLETED_INDEX = {
+    id: 'idx-src', projectId: 'proj-001', type: 'FULL', status: 'COMPLETED',
+    triggerSource: 'MANUAL', createdAt: new Date(), updatedAt: new Date(), error: null,
+    project: { id: 'proj-001', teamId: 'team-001', name: 'test-project', gitUrl: 'x', branch: 'main', status: 'READY', createdAt: new Date(), updatedAt: new Date(), team: { id: 'team-001', organizationId: 'org-001' } },
+  };
+
+  it('IDX-013: POST /api/indexes/:id/rebuild creates new index job', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(COMPLETED_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.prisma.index.create.mockResolvedValue({ ...COMPLETED_INDEX, id: 'idx-new', status: 'QUEUED' });
+    mocks.prisma.project.update.mockResolvedValue({ ...TEST_PROJECT, status: 'INDEXING' });
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-src/rebuild', headers: authHeader });
+
+    expect(res.statusCode).toBe(202);
+    const body = res.json();
+    expect(body.data.status).toBe('QUEUED');
+    expect(body.message).toBe('Rebuild queued');
+    expect(mocks.enqueueIndexJob).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-001', type: 'FULL' }));
+    expect(mocks.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: 'index:rebuild_triggered' }));
+  });
+
+  it('IDX-013b: POST rebuild returns 403 for viewer role', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(COMPLETED_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue({ ...TEST_MEMBER_DEV, role: 'VIEWER' });
+
+    const authHeader = getAuthHeader('user-001', 'viewer');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-src/rebuild', headers: authHeader });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('IDX-013c: POST rebuild returns 429 when project locked', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(COMPLETED_INDEX);
+    mocks.prisma.member.findFirst.mockResolvedValue(TEST_MEMBER_DEV);
+    mocks.acquireProjectLock.mockResolvedValue(false);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/idx-src/rebuild', headers: authHeader });
+
+    expect(res.statusCode).toBe(429);
+  });
+
+  it('IDX-013d: POST rebuild returns 404 for non-existent index', async () => {
+    mocks.prisma.index.findFirst.mockResolvedValue(null);
+
+    const authHeader = getAuthHeader('user-001');
+    const res = await app.inject({ method: 'POST', url: '/api/indexes/nonexistent/rebuild', headers: authHeader });
+
+    expect(res.statusCode).toBe(404);
   });
 });
