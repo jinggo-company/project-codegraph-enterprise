@@ -20,6 +20,9 @@ importers:
       '@codegraph/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@codegraph/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@codegraph/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -90,6 +93,9 @@ importers:
 
   apps/mcp-server:
     dependencies:
+      '@codegraph/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@codegraph/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -273,6 +279,25 @@ importers:
       prisma:
         specifier: ^5.15.0
         version: 5.22.0
+      typescript:
+        specifier: ^5.5.0
+        version: 5.9.3
+
+  packages/engine:
+    dependencies:
+      sql.js:
+        specifier: ^1.14.1
+        version: 1.14.1
+    devDependencies:
+      '@codegraph/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.19
+      '@types/sql.js':
+        specifier: ^1.4.11
+        version: 1.4.11
       typescript:
         specifier: ^5.5.0
         version: 5.9.3

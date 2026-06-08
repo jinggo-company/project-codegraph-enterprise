@@ -7,7 +7,17 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { IndexEngine } from '../index-engine/engine.js';
+import { CrossProjectEngine } from '../index-engine/cross-project.js';
 import { isAuthRequired, validateApiKey, extractApiKey } from '../middleware/auth.js';
+
+// ─── Re-export cross-project tools ───
+export {
+  registerSearchAcrossProjects,
+  registerSearchSymbolAcrossProjects,
+  registerSearchCallersAcrossProjects,
+  registerSearchFulltextAcrossProjects,
+  registerSearchRoutesAcrossProjects,
+} from './cross-project.js';
 
 // ─── Helper: wrap tool handler with auth + project validation ───
 

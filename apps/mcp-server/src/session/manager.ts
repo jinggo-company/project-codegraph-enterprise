@@ -20,7 +20,13 @@ import {
   registerGetImpact,
   registerSearchRoutes,
   registerSearchFulltext,
+  registerSearchAcrossProjects,
+  registerSearchSymbolAcrossProjects,
+  registerSearchCallersAcrossProjects,
+  registerSearchFulltextAcrossProjects,
+  registerSearchRoutesAcrossProjects,
 } from '../tools/index.js';
+import { CrossProjectEngine } from '../index-engine/cross-project.js';
 
 export interface SessionManagerOptions {
   /** Maximum concurrent sessions */
