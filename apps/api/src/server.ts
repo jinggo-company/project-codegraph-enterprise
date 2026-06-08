@@ -1,4 +1,5 @@
-import Fastify from 'fastify';
+import Fastify, { FastifyError } from 'fastify';
+import { ZodError } from 'zod';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import swagger from '@fastify/swagger';
@@ -77,6 +78,22 @@ await app.register(indexRoutes);
 await app.register(webhookRoutes);
 await app.register(registerAuditModule);
 await app.register(registerBillingModule);
+
+// Global error handler: Zod validation errors → 400 Bad Request
+app.setErrorHandler((error: FastifyError, _request, reply) => {
+  if (error.validation || error instanceof ZodError) {
+    const details = error instanceof ZodError
+      ? error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
+      : error.validation;
+    return reply.code(400).send({
+      code: 'BAD_REQUEST',
+      message: 'Validation failed',
+      details,
+    });
+  }
+  // Unhandled errors pass through to default handler
+  reply.send(error);
+});
 
 // Start server
 const port = parseInt(process.env.PORT ?? '4000', 10);

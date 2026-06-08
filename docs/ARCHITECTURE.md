@@ -295,6 +295,16 @@ POST   /api/projects/:projectId/indexes/sync
 GET    /api/indexes/:indexId/status
 GET    /api/indexes/:indexId/stats
 
+# 索引管理 — F2 (T-2026-00264)
+GET    /api/organizations/:orgId/indexes        # 组织级索引列表（支持 status/type/triggerSource 过滤、分页）
+POST   /api/indexes/:indexId/cancel             # 取消 QUEUED/RUNNING 构建
+POST   /api/indexes/:indexId/rebuild            # 基于已有索引重新触发全量构建
+
+# 索引管理 — F2 (T-2026-00264)
+GET    /api/organizations/:orgId/indexes        # 组织级索引列表（支持分页/状态过滤）
+POST   /api/indexes/:indexId/cancel             # 取消 QUEUED/RUNNING 索引构建
+POST   /api/indexes/:indexId/rebuild            # 基于已有索引触发重建
+
 # Webhook
 POST   /api/webhooks/github
 POST   /api/webhooks/gitlab

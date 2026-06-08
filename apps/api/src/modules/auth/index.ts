@@ -132,7 +132,18 @@ export default async function authRoutes(fastify: FastifyInstance) {
       },
     });
 
-    return reply.code(201).send({ data: user });
+    // Generate JWT tokens so user is immediately authenticated after registration
+    const accessToken = app.generateAccessToken({ sub: user.id, email: user.email, role: 'developer' });
+    const refreshToken = app.generateRefreshToken({ sub: user.id });
+
+    return reply.code(201).send({
+      data: {
+        user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
+        accessToken,
+        refreshToken,
+        expiresIn: 3600,
+      },
+    });
   });
 
   // ─── OAuth Init (GitHub) ───
