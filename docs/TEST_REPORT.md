@@ -3,6 +3,37 @@
 > 对应任务: T-2026-00263, T-2026-00264 | 项目: P-2026-00034 (CodeGraph Enterprise)
 > 更新日期: 2026-06-08
 
+## T-2026-00267: F5 跨项目搜索
+
+### 测试执行结果
+
+| 模块 | 用例数 | 通过 | 失败 | 说明 |
+|------|--------|------|------|------|
+| F5 跨项目搜索 | 15 | 15 | 0 | 跨项目代码搜索/符号搜索/调用链搜索/全文检索/路由搜索 |
+| **T-2026-00267 总计** | **15** | **15** | **0** | |
+
+### 测试命令
+```
+pnpm --filter @codegraph/mcp-server test
+✓ test/f5.test.ts (15 tests) 151ms
+✓ test/mcp.test.ts (17 tests) 61ms
+✓ test/engine.test.ts (22 tests) 507ms
+✓ test/f4.test.ts (13 tests) 1238ms
+```
+
+### AC 覆盖验证
+
+| AC | 验收项 | 验证方式 | 结果 |
+|----|--------|----------|------|
+| AC-6 | 跨项目搜索：索引 2 个项目后，一次查询同时返回两个项目的匹配结果 | CrossProjectEngine.searchAcrossProjects → 2 projects, both results returned | ✅ PASS |
+
+### 修复说明
+
+- `CrossProjectEngine` 所有搜索方法改为 `async`，正确 `await engine.open()`
+- MCP tool handlers 对应添加 `await` 调用
+- 测试用例全部更新为 `await` 异步调用
+- `sql.js` WASM 构建不支持 FTS5，测试跳过 FTS5 虚拟表创建，依赖 LIKE 回退
+
 ## T-2026-00264: F2 集中索引管理
 
 ### 测试执行结果

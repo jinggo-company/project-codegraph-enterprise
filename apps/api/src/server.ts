@@ -14,6 +14,7 @@ import indexRoutes from './modules/indexes/index.js';
 import webhookRoutes from './modules/webhooks/index.js';
 import { registerAuditModule } from './modules/audit/index.js';
 import { registerBillingModule } from './modules/billing/index.js';
+import searchRoutes from './modules/search/index.js';
 
 const app = Fastify({
   logger: {
@@ -78,6 +79,7 @@ await app.register(indexRoutes);
 await app.register(webhookRoutes);
 await app.register(registerAuditModule);
 await app.register(registerBillingModule);
+await app.register(searchRoutes);
 
 // Global error handler: Zod validation errors → 400 Bad Request
 app.setErrorHandler((error: FastifyError, _request, reply) => {
