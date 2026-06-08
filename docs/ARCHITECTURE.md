@@ -1,8 +1,8 @@
 # CodeGraph Enterprise — ARCHITECTURE.md
 
-> 对应任务: T-2026-00130 | 项目: P-2026-00020 (CodeGraph Enterprise)
-> 基于 PRD: R-2026-00084
-> 创建日期: 2026-06-01
+> 对应任务: T-2026-00262 | 项目: P-2026-00034 (CodeGraph Enterprise)
+> 基于 PRD: spec-writes/P-2026-00034/docs/PRD.md
+> 更新日期: 2026-06-08 | 原创建: 2026-06-01
 
 ## 1. 项目结构（Monorepo）
 
@@ -189,7 +189,7 @@ interface IndexStats {
 | `search_routes` | url_pattern, framework | 路由→处理器映射 | Web框架路由识别 |
 | `search_fulltext` | query, filters | FTS5 搜索结果 | 全文搜索 |
 
-### 2.4 认证与授权
+### 2.4 认证与授权 (AC-2)
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -197,6 +197,7 @@ interface IndexStats {
 │                                                       │
 │  NextAuth.js v5                                       │
 │  ├── OAuth: GitHub / GitLab / 企业 IdP (SAML/OIDC)    │
+│  ├── 企微/钉钉 SSO (Phase 2)                          │
 │  ├── Email/Password (备用)                            │
 │  └── API Key (MCP 服务端认证)                          │
 │                                                       │
@@ -336,12 +337,187 @@ nginx (443/80)
 
 ## 6. 安全设计
 
+### 6.1 多租户安全隔离 (AC-7, AC-12)
+
+```
+请求 → Auth Middleware → RBAC Check → RLS Policy → Query/Data Access
+                                    │
+                                    ▼
+                    PostgreSQL Row-Level Security
+                    ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+                    CREATE POLICY org_isolation ON projects
+                      USING (organization_id = current_setting('app.current_org_id')::uuid);
+```
+
 | 层面 | 措施 |
 |------|------|
-| 传输 | TLS 1.3 全站强制 HTTPS |
-| 存储 | PostgreSQL TDE、S3 SSE-KMS |
-| 认证 | JWT + refresh token，API Key 轮转 |
-| 授权 | RBAC + 行级多租户隔离 |
+| 传输 | TLS 1.3 全站强制 HTTPS (Nginx 终止) |
+| 存储 | PostgreSQL TDE、S3 SSE-KMS 加密索引文件 |
+| 认证 | JWT + refresh token，API Key 轮转，企微/钉钉 SSO |
+| 授权 | RBAC (owner/admin/developer/viewer) + 行级 RLS |
 | 审计 | 全量操作日志（不可篡改） |
 | 索引隔离 | 按 org/project 物理文件隔离，sandbox 执行 CodeGraph |
-| CI/CD | Webhook HMAC 验证、IP 白名单 |
+| CI/CD | Webhook HMAC 验证、IP 白名单、幂等去重 |
+| 注入防护 | Prisma ORM 参数化查询 + Zod 输入验证 + CSP 头 |
+
+### 6.2 SQL 注入防护 (AC-12)
+- **Prisma ORM**: 所有数据库访问通过 Prisma Client，天然参数化
+- **Zod Schema**: 所有外部输入（API body/query/params）经 Zod 校验
+- **CSP Headers**: Next.js 中间件注入 Content-Security-Policy
+- **WAF 规则**: Nginx 层 rate limiting + SQL pattern 过滤
+
+### 6.3 行级安全策略 (RLS) 实现 (AC-7, AC-12)
+
+```sql
+-- 每个租户会话设置 context
+SET app.current_org_id = '<org_uuid>';
+
+-- RLS policies on all tenant-scoped tables
+CREATE POLICY tenant_isolation ON projects
+  USING (organization_id = current_setting('app.current_org_id')::uuid);
+
+CREATE POLICY tenant_isolation ON indexes
+  USING (organization_id = current_setting('app.current_org_id')::uuid);
+
+-- Service role bypass (internal jobs only)
+CREATE POLICY service_bypass ON projects
+  USING (true)
+  WITH CHECK (true)
+  FOR ALL
+  TO service_role;
+```
+
+## 7. 计费/订阅模块架构 (AC-9)
+
+### 7.1 数据模型
+
+```
+Subscription
+├── id (uuid)
+├── organization_id (uuid, FK → organizations)
+├── plan_id (FK → plans)
+├── status: active | past_due | canceled | trialing
+├── current_period_start (timestamptz)
+├── current_period_end (timestamptz)
+├── cancel_at_period_end (bool)
+└── metadata (jsonb)  -- payment provider refs
+
+Plan
+├── id (uuid)
+├── name: free | pro | enterprise
+├── max_projects (int)
+├── max_members (int)
+├── max_concurrent_builds (int)
+├── price_monthly (int)  -- 单位: 分
+└── features (jsonb)
+
+Invoice
+├── id (uuid)
+├── subscription_id (FK)
+├── amount (int)
+├── status: pending | paid | failed
+├── provider: alipay | wechat | stripe
+└── paid_at (timestamptz)
+```
+
+### 7.2 支付流程
+
+```
+用户升级 → 创建 Invoice → 调支付宝/微信支付 → 用户付款
+                                    │
+                                    ▼
+                    支付宝/微信 → POST /api/billing/webhook/{provider}
+                                    │
+                                    ▼
+                    验证签名 → 更新 Subscription.status → 更新 Plan limits
+                                    │
+                                    ▼
+                    实时生效: 项目数/成员数上限即时变更
+```
+
+### 7.3 限额 enforcement
+- 每次创建项目/成员时检查 `subscription.plan.max_*`
+- 超限返回 402 Payment Required + 升级引导
+- 降级时：已有资源保留但不允许新建
+
+## 8. 企微/钉钉通知集成 (AC-10)
+
+### 8.1 通知触发事件
+
+| 事件 | 目标 | 内容 |
+|------|------|------|
+| 索引构建成功 | Webhook 配置的群 | 项目名、耗时、文件数 |
+| 索引构建失败 | Webhook 配置的群 | 项目名、错误信息、重试链接 |
+| 用量告警 (80%) | 管理员 | 当前用量、剩余配额 |
+| 权限审批请求 | 审批人 | 请求人、请求角色、审批链接 |
+
+### 8.2 推送流程
+
+```
+Worker 完成构建 → 检查通知配置 → 构造消息体
+                                      │
+                                      ▼
+              ┌──────────────┬────────────────┐
+              ▼              ▼                ▼
+          企微 Webhook    钉钉 Webhook      Email (备用)
+          (Markdown)      (ActionCard)
+```
+
+## 9. CI/CD 自动索引构建流程 (AC-4)
+
+```
+GitHub Push → GitHub 发送 webhook payload
+                    │
+                    ▼
+       POST /api/webhooks/github (Fastify)
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+    HMAC 验证   分支过滤    幂等去重
+    (secret)   (config)   (Redis lock)
+                    │
+                    ▼
+       BullMQ Queue (build-index)
+                    │
+                    ▼
+       Worker: clone → CodeGraph → upload → update DB
+                    │
+                    ▼
+       审计日志 + 通知推送
+```
+
+**幂等设计**: 同一 repo+branch+commit 的并发 webhook 只创建一个构建任务（Redis SET NX）
+
+## 10. 性能与并发架构 (AC-11)
+
+### 10.1 MCP Server 并发设计
+
+```
+┌─────────────────────────────────────────────────┐
+│                 Nginx (upstream)                  │
+│                  keepalive: 64                    │
+└────┬────┬────┬────┬────┬────┬────┬────┬────┬─────┘
+     │    │    │    │    │    │    │    │    │    │
+  [10 concurrent MCP connections from agents]
+     │    │    │    │    │    │    │    │    │    │
+     ▼    ▼    ▼    ▼    ▼    ▼    ▼    ▼    ▼    ▼
+┌─────────────────────────────────────────────────┐
+│          MCP Server (Node.js cluster)            │
+│          workers: 4 (per CPU core)               │
+│          max concurrent queries: 20              │
+└────────────┬────────────────────────────────────┘
+             │
+             ▼
+┌─────────────────────────────────────────────────┐
+│  CodeGraph Index Engine (SQLite/FTS5)            │
+│  - WAL mode for concurrent reads                 │
+│  - Connection pool: 10 per worker                │
+│  - Query timeout: 2s                             │
+└─────────────────────────────────────────────────┘
+```
+
+### 10.2 P95 <2s 保障措施
+- SQLite WAL mode → 多 reader 无锁冲突
+- 索引预热：Worker 完成后通知 MCP Server 加载索引到内存
+- 查询超时：2s hard timeout，超时返回 partial results
+- 连接池：BullMQ Redis + PostgreSQL 连接池复用
