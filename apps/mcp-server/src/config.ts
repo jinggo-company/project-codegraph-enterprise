@@ -16,6 +16,10 @@ export interface McpConfig {
   serverVersion: string;
   /** HTTP transport port (0 = stdio only) */
   httpPort: number;
+  /** Whether HTTP gateway is enabled */
+  httpEnabled: boolean;
+  /** Bind host */
+  host: string;
 }
 
 export function loadConfig(): McpConfig {
@@ -25,6 +29,8 @@ export function loadConfig(): McpConfig {
     serverName: process.env.MCP_SERVER_NAME ?? 'codegraph-enterprise',
     serverVersion: process.env.MCP_SERVER_VERSION ?? '0.1.0',
     httpPort: parseInt(process.env.MCP_HTTP_PORT ?? '0', 10),
+    httpEnabled: process.env.MCP_HTTP_ENABLED === 'true' || parseInt(process.env.MCP_HTTP_PORT ?? '0', 10) > 0,
+    host: process.env.MCP_HOST ?? '0.0.0.0',
   };
 }
 
