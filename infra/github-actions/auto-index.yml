@@ -1,0 +1,48 @@
+# CodeGraph Enterprise — CI/CD Auto-Index Workflow (F3)
+# Usage: Copy to your repo as .github/workflows/codegraph-index.yml
+# Required secrets: CODEGRAPH_API_URL, CODEGRAPH_WEBHOOK_SECRET
+
+name: CodeGraph Enterprise — Auto Index
+
+on:
+  push:
+    branches:
+      # Override with the same branches you configured in the CodeGraph Enterprise webhook branch filter
+      - main
+      - develop
+      - 'release/**'
+
+jobs:
+  trigger-index:
+    name: Trigger CodeGraph Index Rebuild
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Notify CodeGraph Enterprise
+        run: |
+          echo "Triggering CodeGraph Enterprise index rebuild..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "${{ secrets.CODEGRAPH_API_URL }}/api/webhooks/ci" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "gitUrl": "${{ github.repositoryUrl }}",
+              "branch": "${{ github.ref_name }}",
+              "buildStatus": "success",
+              "commit": "${{ github.sha }}",
+              "pipeline": "${{ github.run_id }}"
+            }')
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ CodeGraph index rebuild triggered successfully"
+          else
+            echo "⚠️ CodeGraph API returned $HTTP_CODE — index rebuild may not have been queued"
+            echo "Details: $BODY"
+          fi

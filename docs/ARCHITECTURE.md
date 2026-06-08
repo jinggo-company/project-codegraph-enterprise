@@ -3,6 +3,7 @@
 > 对应任务: T-2026-00262 | 项目: P-2026-00034 (CodeGraph Enterprise)
 > 基于 PRD: spec-writes/P-2026-00034/docs/PRD.md
 > 更新日期: 2026-06-08 | 原创建: 2026-06-01
+> F3 更新: 2026-06-08 (T-2026-00265) — WebhookConfig CRUD, 分支过滤, 幂等去重, WebhookEvent 日志
 
 ## 1. 项目结构（Monorepo）
 
@@ -496,7 +497,25 @@ GitHub Push → GitHub 发送 webhook payload
        审计日志 + 通知推送
 ```
 
-**幂等设计**: 同一 repo+branch+commit 的并发 webhook 只创建一个构建任务（Redis SET NX）
+**幂等设计**: 同一 project:branch:commit 的并发 webhook 在 Redis 中 SET NX 去重，默认窗口 60 秒（可配置 `dedupWindowSec`）。
+
+**分支过滤**: 通过 `WebhookConfig.branchFilter` 配置 `allow`/`deny` 模式，支持 `*` 和 `**` 通配符。deny 优先于 allow。
+
+**新增数据模型** (F3):
+- `WebhookConfig` — 每项目的 webhook 配置（provider, secret, branchFilter, indexType, dedupWindowSec）
+- `WebhookEvent` — webhook 事件审计日志（action: QUEUED/IGNORED/REJECTED/ERROR, dedupKey, reason）
+
+**新增 API** (F3):
+```
+GET    /api/projects/:projectId/webhook-configs
+POST   /api/projects/:projectId/webhook-configs
+PATCH  /api/projects/:projectId/webhook-configs/:configId
+DELETE /api/projects/:projectId/webhook-configs/:configId
+GET    /api/projects/:projectId/webhook-events
+GET    /api/indexes/:indexId/webhook-events
+```
+
+**CI/CD 模板**: `infra/github-actions/auto-index.yml` 可直接复制到下游仓库使用。
 
 ## 10. 性能与并发架构 (AC-11)
 
