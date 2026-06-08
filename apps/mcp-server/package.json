@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@codegraph/engine": "workspace:*",
     "@codegraph/types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.6.0",
     "express": "^5.2.1",

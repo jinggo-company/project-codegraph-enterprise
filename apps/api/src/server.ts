@@ -83,14 +83,19 @@ await app.register(searchRoutes);
 
 // Global error handler: Zod validation errors → 400 Bad Request
 app.setErrorHandler((error: FastifyError, _request, reply) => {
-  if (error.validation || error instanceof ZodError) {
-    const details = error instanceof ZodError
-      ? error.errors.map(e => ({ field: e.path.join('.'), message: e.message }))
-      : error.validation;
+  if (error instanceof ZodError) {
+    const details = error.errors.map(e => ({ field: e.path.join('.'), message: e.message }));
     return reply.code(400).send({
       code: 'BAD_REQUEST',
       message: 'Validation failed',
       details,
+    });
+  }
+  if (error.validation) {
+    return reply.code(400).send({
+      code: 'BAD_REQUEST',
+      message: 'Validation failed',
+      details: error.validation,
     });
   }
   // Unhandled errors pass through to default handler

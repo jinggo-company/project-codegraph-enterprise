@@ -9,7 +9,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '@codegraph/db';
 import { createAuditLog } from '../../lib/audit.js';
-import { CrossProjectEngine } from '../../../../mcp-server/src/index-engine/cross-project.js';
+import { CrossProjectEngine } from '@codegraph/engine';
 
 const INDEX_DIR = process.env.CODEGRAPH_INDEX_DIR ?? './data/indexes';
 
@@ -37,7 +37,15 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       limit: z.coerce.number().int().positive().default(50).describe('Max results per project'),
     });
 
-    const query = querySchema.parse(request.query);
+    const parsed = querySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        code: 'BAD_REQUEST',
+        message: 'Invalid query parameters',
+        details: parsed.error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+      });
+    }
+    const query = parsed.data;
 
     // Get all projects for this org
     const projects = await prisma.project.findMany({
@@ -63,60 +71,41 @@ export default async function searchRoutes(fastify: FastifyInstance) {
 
     let results: any[] = [];
 
-    switch (query.type) {
-      case 'symbol':
-        results = engine.searchAcrossProjects(query.q, targetProjectIds, {
-          language: query.language,
-          limit: query.limit,
-        }).map((r) => ({
-          project: r.project,
-          file: r.file,
-          line: r.line,
-          column: r.column,
-          symbol: r.symbol,
-          kind: r.kind,
-          snippet: r.snippet,
-        }));
-        break;
+    const rawResults = await (() => {
+      switch (query.type) {
+        case 'symbol':
+          return engine.searchAcrossProjects(query.q, targetProjectIds, {
+            language: query.language,
+            limit: query.limit,
+          });
+        case 'fulltext':
+          return engine.searchFulltextAcrossProjects(query.q, targetProjectIds, {
+            limit: query.limit,
+          });
+        case 'caller':
+          return engine.searchCallersAcrossProjects(query.q, targetProjectIds);
+        case 'route':
+          return engine.searchRoutesAcrossProjects(targetProjectIds, {
+            urlPattern: query.q,
+            framework: query.language,
+          });
+      }
+    })();
 
-      case 'fulltext':
-        results = engine.searchFulltextAcrossProjects(query.q, targetProjectIds, {
-          limit: query.limit,
-        }).map((r) => ({
-          project: r.project,
-          file: r.file,
-          line: r.line,
-          content: r.content,
-          score: r.score,
-        }));
-        break;
-
-      case 'caller':
-        results = engine.searchCallersAcrossProjects(query.q, targetProjectIds).map((r) => ({
-          project: r.project,
-          caller: r.caller,
-          callerFile: r.callerFile,
-          callerLine: r.callerLine,
-          callee: r.callee,
-          calleeFile: r.calleeFile,
-          calleeLine: r.calleeLine,
-        }));
-        break;
-
-      case 'route':
-        results = engine.searchRoutesAcrossProjects(targetProjectIds, {
-          urlPattern: query.q,
-          framework: query.language,
-        }).map((r) => ({
-          project: r.project,
-          method: r.method,
-          path: r.path,
-          handler: r.handler,
-          file: r.file,
-          framework: r.framework,
-        }));
-        break;
-    }
+    results = rawResults.map((r: any) => {
+      const base = { project: r.project };
+      if (query.type === 'symbol') {
+        return { ...base, file: r.file, line: r.line, column: r.column, symbol: r.symbol, kind: r.kind, snippet: r.snippet };
+      }
+      if (query.type === 'fulltext') {
+        return { ...base, file: r.file, line: r.line, content: r.content, score: r.score };
+      }
+      if (query.type === 'caller') {
+        return { ...base, caller: r.caller, callerFile: r.callerFile, callerLine: r.callerLine, callee: r.callee, calleeFile: r.calleeFile, calleeLine: r.calleeLine };
+      }
+      // route
+      return { ...base, method: r.method, path: r.path, handler: r.handler, file: r.file, framework: r.framework };
+    });
 
     // Log the search
     await createAuditLog({
@@ -124,7 +113,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       userId: request.userId,
       action: 'search:cross_project',
       entityType: 'search',
-      entityId: null,
+      entityId: undefined as unknown as string | undefined,
       details: { query: query.q, type: query.type, projectCount: targetProjectIds.length, resultCount: results.length },
       ipAddress: (request as any).ip,
     });

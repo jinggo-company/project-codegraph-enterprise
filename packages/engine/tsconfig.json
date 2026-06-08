@@ -8,10 +8,5 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src"],
-  "references": [
-    { "path": "../../packages/types" },
-    { "path": "../../packages/db" },
-    { "path": "../../packages/engine" }
-  ]
+  "include": ["src"]
 }
