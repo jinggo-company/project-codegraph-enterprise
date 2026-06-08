@@ -11,6 +11,7 @@ import authRoutes from '../src/modules/auth';
 import orgRoutes from '../src/modules/organizations';
 import teamRoutes from '../src/modules/teams';
 import projectRoutes from '../src/modules/projects';
+import indexRoutes from '../src/modules/indexes';
 
 // ─── Mock Prisma ───
 
@@ -191,6 +192,7 @@ async function createTestApp(): Promise<FastifyInstance> {
   await app.register(orgRoutes);
   await app.register(teamRoutes);
   await app.register(projectRoutes);
+  await app.register(indexRoutes);
 
   await app.ready();
   return app;
