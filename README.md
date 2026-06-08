@@ -6,6 +6,15 @@
 
 CodeGraph Enterprise 是面向中小研发团队的代码知识图谱 SaaS 平台，提供集中索引管理、CI/CD 预构建索引、跨项目搜索、角色权限、审计日志。
 
+## 交付里程碑
+
+| 里程碑 | 任务 | 状态 |
+|--------|------|------|
+| F0 架构设计 | T-2026-00262 | ✅ done |
+| F1 多租户 SaaS 平台（团队注册、项目管理、角色权限） | T-2026-00263 | ✅ 完成 |
+| F2 集中索引管理（Web 控制台、索引状态、手动触发重建） | T-2026-00264 | pending |
+| F3 CI/CD 自动索引构建（GitHub/GitLab Webhook、分支过滤） | T-2026-00265 | pending |
+
 ## 快速开始
 
 ### 前置条件
@@ -104,13 +113,36 @@ project-codegraph-enterprise/
 - **对象存储**: MinIO (S3 兼容)
 - **工具**: pnpm workspace / Turborepo / Vitest
 
+## F1 已完成模块清单
+
+| 模块 | API 路由 | 功能 |
+|------|----------|------|
+| Auth | `/api/auth/register`, `/api/auth/oauth/github`, `/api/auth/oauth/gitlab`, `/api/auth/me`, `/api/auth/apikey` | 邮箱注册、GitHub/GitLab OAuth、JWT/API Key 认证、密钥轮转 |
+| Organizations | `/api/organizations` (CRUD) | 组织创建（自动创建默认团队 + 免费订阅） |
+| Teams | `/api/organizations/:id/teams`, `/api/teams/:id/members` | 团队 CRUD、成员邀请/移除、角色管理 |
+| Projects | `/api/teams/:id/projects`, `/api/projects/:id` (CRUD) | 项目 CRUD、订阅限额检查（Free 3 项目） |
+| Indexes | `/api/projects/:id/indexes/build`, `/api/indexes/:id/status` | 手动触发索引、状态查询 |
+| Webhooks | `/api/webhooks/github`, `/api/webhooks/gitlab` | GitHub/GitLab Push Webhook + HMAC 验证 |
+| Audit | `/api/organizations/:id/audit-logs` | 只读审计日志（过滤、分页） |
+| Billing | `/api/organizations/:id/subscription`, `/api/billing/subscribe`, `/api/billing/webhook/:provider` | 订阅查询/升级、支付回调 |
+
+### F1 覆盖 AC
+
+| AC | 覆盖状态 | Case-IDs |
+|----|----------|----------|
+| AC-1 | ✅ | INFRA-001, INFRA-002 |
+| AC-2 | ✅ | AUTH-001 ~ AUTH-008 |
+| AC-3 | ✅ | IDX-001, IDX-002 |
+| AC-7 | ✅ | ORG-006, SEC-006 |
+
 ## 文档
 
 | 文档 | 说明 |
 |------|------|
 | [TECH_STACK.md](docs/TECH_STACK.md) | 技术栈、版本、依赖清单 |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、模块设计、数据流 |
-| [TEST_CASES.md](docs/TEST_CASES.md) | 测试案例框架（77 条用例） |
+| [TEST_CASES.md](docs/TEST_CASES.md) | 测试案例框架（96 条用例） |
+| [TEST_REPORT.md](docs/TEST_REPORT.md) | T-2026-00263 测试报告 |
 
 ## 立项信息
 
