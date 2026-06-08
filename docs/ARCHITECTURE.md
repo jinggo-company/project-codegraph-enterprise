@@ -2,8 +2,9 @@
 
 > 对应任务: T-2026-00262 | 项目: P-2026-00034 (CodeGraph Enterprise)
 > 基于 PRD: spec-writes/P-2026-00034/docs/PRD.md
-> 更新日期: 2026-06-08 | 原创建: 2026-06-01
+> 更新日期: 2026-06-09 | 原创建: 2026-06-01
 > F3 更新: 2026-06-08 (T-2026-00265) — WebhookConfig CRUD, 分支过滤, 幂等去重, WebhookEvent 日志
+> F4 更新: 2026-06-09 (T-2026-00266) — 新增 MCP Server 网关托管章节
 
 ## 1. 项目结构（Monorepo）
 
@@ -48,8 +49,13 @@ project-codegraph-enterprise/
 │   │
 │   ├── mcp-server/             # MCP Server 网关
 │   │   ├── src/
-│   │   │   ├── server.ts       # MCP Server 入口
+│   │   │   ├── server.ts       # MCP Server 入口（stdio 模式）
+│   │   │   ├── http-server.ts  # HTTP/SSE 传输层（F4 网关托管）
+│   │   │   ├── session/        # 会话管理器
+│   │   │   │   ├── manager.ts  # SessionManager: LRU 缓存 + 超时
+│   │   │   │   └── types.ts    # 会话类型定义
 │   │   │   ├── tools/          # MCP tools 实现
+│   │   │   │   ├── index.ts    # 统一 tool 注册入口
 │   │   │   │   ├── search.ts   # 代码搜索工具
 │   │   │   │   ├── callers.ts  # 调用者查询
 │   │   │   │   ├── impact.ts   # 影响分析
@@ -57,7 +63,10 @@ project-codegraph-enterprise/
 │   │   │   ├── index-engine/   # CodeGraph 索引引擎适配层
 │   │   │   │   ├── engine.ts   # 索引引擎接口
 │   │   │   │   ├── local.ts    # 本地 CodeGraph 引擎
-│   │   │   │   └── remote.ts   # 远程/托管索引引擎
+│   │   │   │   ├── remote.ts   # 远程/托管索引引擎
+│   │   │   │   └── pool.ts     # 索引连接池（会话复用）
+│   │   │   ├── middleware/
+│   │   │   │   └── auth.ts     # API Key 认证
 │   │   │   └── config.ts       # MCP 配置
 │   │   └── test/
 │   │
@@ -517,9 +526,81 @@ GET    /api/indexes/:indexId/webhook-events
 
 **CI/CD 模板**: `infra/github-actions/auto-index.yml` 可直接复制到下游仓库使用。
 
-## 10. 性能与并发架构 (AC-11)
+## 10. F4 MCP Server 网关托管架构
 
-### 10.1 MCP Server 并发设计
+> 新增于 T-2026-00266
+
+### 10.1 HTTP/SSE 传输层
+
+MCP Server 除 stdio 传输外，新增 HTTP/SSE 传输模式，作为统一的 MCP 端点：
+
+```
+┌─────────────────────────────────────────────────┐
+│              HTTP Server (Fastify)                │
+│                                                   │
+│  POST /mcp/message     ← MCP JSON-RPC 请求       │
+│  GET  /mcp/sse         ← SSE 推送流              │
+│  GET  /mcp/health      ← 健康检查                │
+│                                                   │
+│  请求头认证: Authorization: Bearer <api-key>      │
+│  或 x-api-key: <api-key>                         │
+└──────────────────────┬────────────────────────────┘
+                       │
+                       ▼
+            ┌──────────────────────┐
+            │   Session Manager    │
+            │  (LRU, TTL 30min)    │
+            └──────────┬───────────┘
+                       │
+                       ▼
+            ┌──────────────────────┐
+            │  Index Engine Pool   │
+            │  (per-project cache) │
+            └──────────────────────┘
+```
+
+### 10.2 会话管理器（SessionManager）
+
+```
+class SessionManager {
+  - sessions: Map<string, McpSession>    // sessionId → 会话
+  - projectPool: Map<string, IndexEngine> // projectId → 共享引擎
+  - ttlMs: number                         // 会话超时时间 (默认 30min)
+  - maxSessions: number                   // 最大会话数 (默认 100)
+
+  create(apiKey: string, projectId: string): McpSession
+  get(sessionId: string): McpSession | undefined
+  close(sessionId: string): void
+  cleanup(): void                         // 清除超时会话
+}
+```
+
+**多 agent 会话复用**：
+- 同一 API Key + Project 的多个 agent 请求复用同一个 IndexEngine 实例
+- 每个 agent 有独立的 McpServer 实例（MCP initialize 状态隔离）
+- IndexEngine 是共享的（SQLite 只读，无写入冲突）
+
+### 10.3 索引连接池（IndexEnginePool）
+
+```
+class IndexEnginePool {
+  - pool: Map<string, { engine: IndexEngine, lastAccess: number, refCount: number }>
+
+  get(projectId: string): IndexEngine     // 获取或创建引擎
+  release(projectId: string): void         // 减少引用计数
+  cleanup(maxAgeMs: number): void         // 清理空闲引擎
+}
+```
+
+- 索引文件是只读的（Worker 写完后不再改），多 reader 安全
+- SQLite WAL mode 支持并发读取
+- 连接池避免每次查询都 open/close 数据库文件
+
+---
+
+## 11. 性能与并发架构 (AC-11)
+
+### 11.1 MCP Server 并发设计
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -545,7 +626,7 @@ GET    /api/indexes/:indexId/webhook-events
 └─────────────────────────────────────────────────┘
 ```
 
-### 10.2 P95 <2s 保障措施
+### 11.2 P95 <2s 保障措施
 - SQLite WAL mode → 多 reader 无锁冲突
 - 索引预热：Worker 完成后通知 MCP Server 加载索引到内存
 - 查询超时：2s hard timeout，超时返回 partial results

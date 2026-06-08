@@ -2,7 +2,8 @@
 
 > 对应任务: T-2026-00262 | 项目: P-2026-00034 (CodeGraph Enterprise)
 > 基于 PRD: spec-writes/P-2026-00034/docs/PRD.md
-> 更新日期: 2026-06-08 | 原创建: 2026-06-01
+> 更新日期: 2026-06-09 | 原创建: 2026-06-01
+> 更新: T-2026-00266 新增 F4 MCP Server 网关托管测试
 
 ## AC 覆盖矩阵
 
@@ -14,7 +15,7 @@
 | AC-2 | AUTH-001, AUTH-008 | 团队注册与登录（企微/钉钉 SSO 或邮箱密码），创建项目成功 |
 | AC-3 | IDX-001, IDX-002, PERF-005 | 手动触发索引构建，5 分钟内完成（≤5K 文件），状态可见 |
 | AC-4 | WEBHOOK-001, WEBHOOK-002, WEBHOOK-003 | GitHub Webhook push → 2min 内自动触发索引重建，构建日志可查 |
-| AC-5 | MCP-001, MCP-002, MCP-003, MCP-004 | MCP 端点连接 Claude Code/Cursor，执行代码查询，返回图谱数据 |
+| AC-5 | MCP-001, MCP-002, MCP-003, MCP-004, F4-001, F4-002, F4-003 | MCP 端点连接 Claude Code/Cursor，执行代码查询，返回图谱数据，HTTP/SSE 传输正常 |
 | AC-6 | MCP-013 | 跨项目搜索：索引 2 个项目后，一次查询同时返回两个项目的匹配结果 |
 | AC-7 | ORG-006, SEC-006 | 多租户隔离：租户 A 的项目和索引对租户 B 不可见，API 返回 403 |
 | AC-8 | AUDIT-001, AUDIT-004, AUDIT-006 | 审计日志：索引构建/查询/成员操作均记录，支持按时间/操作类型过滤 |
@@ -223,6 +224,27 @@
 
 ---
 
+## 15. F4 MCP 网关托管 — 覆盖 AC-5, AC-11
+
+> 新增于 T-2026-00266
+
+| Case-ID | 描述 | 前置条件 | 步骤 | 预期结果 |
+|---------|------|----------|------|----------|
+| F4-001 | HTTP 传输初始化 | mcp-server HTTP 模式已启动 | POST /mcp/message 发送 initialize 请求 | 返回 initialize result，含 server 信息 |
+| F4-002 | SSE 推送连接 | HTTP Server 已启动 | GET /mcp/sse | 200，Content-Type: text/event-stream，保持连接 |
+| F4-003 | HTTP 端点 tool 调用 | 已 initialize，有项目索引 | POST /mcp/message 发送 tools/call | 返回 tool 执行结果 |
+| F4-004 | 会话创建与复用 | 同一 API Key | 两个 agent 分别 initialize | 复用同一个 IndexEngine 实例 |
+| F4-005 | 会话超时清理 | 创建会话后等待 | 等待超过 TTL (30min) | 会话被清理，IndexEngine 引用计数减 1 |
+| F4-006 | 会话数量上限 | 创建 maxSessions 个会话 | 尝试创建第 maxSessions+1 个 | 返回 429 Too Many Requests |
+| F4-007 | 健康检查 | HTTP Server 运行 | GET /mcp/health | 200, `{"status": "ok"}` |
+| F4-008 | API Key 认证失败 | 无有效 API Key | POST /mcp/message 不带 key | 401 Unauthorized |
+| F4-009 | 多 agent 并发查询 | 同一项目，2 个 agent 连接 | 同时发起 search_code | 两个请求都成功返回，无冲突 |
+| F4-010 | 索引连接池命中 | 同一项目已有活跃连接 | 新查询请求该 project | 复用已有 IndexEngine，无重复 open |
+| F4-011 | stdio 传输向后兼容 | mcp-server stdio 模式 | 通过 Claude Code stdio 连接 | 正常工作，不受 HTTP 模式影响 |
+| F4-012 | 会话 LRU 淘汰 | 超过 maxSessions，有旧会话 | 创建新会话 | 最久未使用的会话被淘汰 |
+
+---
+
 ## 测试用例统计
 
 | 模块 | 用例数 | 优先级 | 覆盖 AC |
@@ -242,4 +264,5 @@
 | PERF 性能 | 6 | P1 | AC-3, AC-11 |
 | INFRA 基础设施 | 2 | P0 | AC-1 |
 | SEC 安全 | 8 | P1 | AC-7, AC-12 |
-| **总计** | **96** | | **AC-1 ~ AC-12** |
+| F4 MCP 网关托管 | 12 | P0 | AC-5, AC-11 |
+| **总计** | **108** | | **AC-1 ~ AC-12** |
