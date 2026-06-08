@@ -1,8 +1,8 @@
 # CodeGraph Enterprise — TECH_STACK.md
 
-> 对应任务: T-2026-00130 | 项目: P-2026-00020 (CodeGraph Enterprise)
-> 基于 PRD: R-2026-00084
-> 创建日期: 2026-06-01
+> 对应任务: T-2026-00262 | 项目: P-2026-00034 (CodeGraph Enterprise)
+> 基于 PRD: spec-writes/P-2026-00034/docs/PRD.md
+> 更新日期: 2026-06-08 | 原创建: 2026-06-01
 
 ## 1. 项目定位
 
@@ -14,7 +14,7 @@ CodeGraph Enterprise 是基于开源 [CodeGraph](https://github.com/colbymchenry
 
 | 组件 | 技术 | 版本 | 说明 |
 |------|------|------|------|
-| CodeGraph Core | TypeScript + Rust | 最新稳定版（跟踪 upstream） | 符号解析、调用图构建、知识图谱索引 |
+| CodeGraph Core | TypeScript + Rust | 最新稳定版（跟踪 upstream） | 符号解析、调用图构建、知识图谱索引（MIT, 35K+ stars） |
 | SQLite | C 库（嵌入式） | 3.45+ | 本地索引存储，FTS5 全文搜索 |
 | tree-sitter | C/Rust | 0.22+ | 多语言语法解析（20+ 语言支持） |
 
@@ -28,8 +28,8 @@ CodeGraph Enterprise 是基于开源 [CodeGraph](https://github.com/colbymchenry
 | 数据库 | PostgreSQL | 16+ | 多租户元数据、用户管理、审计日志、计费 |
 | ORM | Prisma | 5.15+ | 类型安全数据库访问 |
 | MCP SDK | @modelcontextprotocol/sdk | 1.6+ | MCP Server/Client 协议实现 |
-| 任务队列 | BullMQ | 5.0+ | Redis-backed 任务调度（索引构建、CI/CD 触发） |
-| 缓存/队列存储 | Redis | 7.2+ | 会话缓存、任务队列、索引状态锁 |
+| 任务队列 | BullMQ | 5.0+ | Redis-backed 任务调度（索引构建、CI/CD 触发、Webhook 去重） |
+| 缓存/队列存储 | Redis | 7.2+ | 会话缓存、任务队列、索引状态锁、并发构建锁 |
 
 ### 2.3 前端仪表板
 
@@ -110,3 +110,22 @@ CodeGraph Enterprise 是基于开源 [CodeGraph](https://github.com/colbymchenry
 | MCP 协议版本碎片化 | 各 agent 兼容性 | 实现协议适配层，抽象 MCP 版本差异 |
 | Node.js 单线程索引构建 | 大型代码库索引慢 | 多 worker 进程、增量索引 |
 | 国内 AI 工具渗透率低 | 市场需求不足 | 同时支持国际版 + 教育市场 |
+| Webhook 并发触发重复构建 | 资源浪费、索引损坏 | Redis 分布式锁 + BullMQ 去重 |
+| 多租户数据泄露 | 安全事故 | 行级 RLS + 物理文件隔离 + 中间件强制 org_id |
+
+## 6. AC 覆盖矩阵
+
+| AC | 验收项 | 覆盖模块 | 验证方式 |
+|----|--------|----------|----------|
+| AC-1 | Docker Compose 一键启动，健康检查 200 | infra/docker, API /health | `docker compose up` + curl |
+| AC-2 | 团队注册/登录（企微/钉钉 SSO 或邮箱） | auth, web | OAuth 登录 + 邮箱注册 |
+| AC-3 | 手动触发索引构建 ≤5min（≤5K 文件） | indexes, worker | POST /api/projects/:id/indexes/build |
+| AC-4 | GitHub Webhook push → 2min 自动触发索引 | webhooks, worker | POST /api/webhooks/github + 状态轮询 |
+| AC-5 | MCP 端点连接 Claude Code，返回图谱数据 | mcp-server | initialize + tool 调用 |
+| AC-6 | 跨项目搜索：2 个项目一次查询返回双方结果 | mcp-server, indexes | search_code multi-project |
+| AC-7 | 多租户隔离：A 项目对 B 不可见 | auth, RBAC, RLS | API 越权测试 → 403 |
+| AC-8 | 审计日志：构建/查询/操作记录可过滤 | audit | GET /audit-logs + filter |
+| AC-9 | 订阅升级后上限即时生效 | billing | 升级套餐 → 验证限额 |
+| AC-10 | 企微/钉钉通知：构建成功/失败推送 | webhooks, notifications | 模拟构建完成 → 验证推送 |
+| AC-11 | MCP Server 10 并发查询 P95 <2s | mcp-server, infra | k6 压测 |
+| AC-12 | 安全加固：鉴权/HTTPS/SQL 注入/RLS | auth, security, db | 渗透测试 + RLS 验证 |
