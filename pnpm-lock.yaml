@@ -99,6 +99,9 @@ importers:
       express:
         specifier: ^5.2.1
         version: 5.2.1
+      fastify:
+        specifier: ^4.28.0
+        version: 4.29.1
       sql.js:
         specifier: ^1.14.1
         version: 1.14.1

@@ -2,7 +2,8 @@
 
 > 对应任务: T-2026-00262 | 项目: P-2026-00034 (CodeGraph Enterprise)
 > 基于 PRD: spec-writes/P-2026-00034/docs/PRD.md
-> 更新日期: 2026-06-08 | 原创建: 2026-06-01
+> 更新日期: 2026-06-09 | 原创建: 2026-06-01
+> 更新: T-2026-00266 新增 F4 MCP Server 网关托管章节
 
 ## 1. 项目定位
 
@@ -112,6 +113,59 @@ CodeGraph Enterprise 是基于开源 [CodeGraph](https://github.com/colbymchenry
 | 国内 AI 工具渗透率低 | 市场需求不足 | 同时支持国际版 + 教育市场 |
 | Webhook 并发触发重复构建 | 资源浪费、索引损坏 | Redis 分布式锁 + BullMQ 去重 |
 | 多租户数据泄露 | 安全事故 | 行级 RLS + 物理文件隔离 + 中间件强制 org_id |
+
+## 5b. F4 MCP Server 网关托管 — 技术选型
+
+> 新增于 T-2026-00266
+
+F4 核心目标：提供统一的 MCP HTTP/SSE 端点，多个 AI agent（Claude Code/Cursor/Codex）可连接同一平台实例，共享同一份索引数据，实现多 agent 会话复用。
+
+### 新增组件
+
+| 组件 | 技术 | 版本 | 说明 |
+|------|------|------|------|
+| HTTP 传输层 | @modelcontextprotocol/sdk Streamable HTTP | 1.6+ | MCP Streamable HTTP Transport，统一端点 |
+| SSE | 原生 Node.js | 内置 | Server-Sent Events，用于 server→client 推送 |
+| 会话管理 | 内存 LRU Map + Redis | - | 多 agent 会话复用、会话状态持久化 |
+| Fastify 插件 | fastify | 4.28+ | 注册 `/mcp` 路由，处理 initialize/tool call |
+
+### 会话复用架构
+
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│ Claude Code │  │   Cursor    │  │   Codex     │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │ HTTP/SSE       │ HTTP/SSE       │ HTTP/SSE
+       └────────────────┼────────────────┘
+                        │
+                        ▼
+            ┌───────────────────────┐
+            │   MCP Gateway (HTTP)   │
+            │  ┌─────────────────┐  │
+            │  │ Session Manager │  │
+            │  │ (LRU + Redis)   │  │
+            │  └─────────────────┘  │
+            │  ┌─────────────────┐  │
+            │  │  Shared Engine  │  │
+            │  │ (Index Pool)    │  │
+            │  └─────────────────┘  │
+            └───────────┬───────────┘
+                        │
+                        ▼
+            ┌───────────────────────┐
+            │   SQLite Index Files   │
+            │   (按 org/project 隔离) │
+            └───────────────────────┘
+```
+
+### 关键设计决策
+
+1. **单一 HTTP 端点**：所有 MCP 通信统一走 `/mcp` 路径（MCP Streamable HTTP 规范）
+2. **会话复用**：多个 agent 通过 API Key 关联到同一项目，共享同一个 IndexEngine 实例池
+3. **连接池化**：SQLite 连接按 project 缓存，避免重复打开/关闭
+4. **会话超时**：空闲会话 30min 自动清理，释放连接
+
+---
 
 ## 6. AC 覆盖矩阵
 
