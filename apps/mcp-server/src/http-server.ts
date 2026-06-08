@@ -11,8 +11,7 @@
  */
 
 import Fastify from 'fastify';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { SessionManager } from './session/manager.js';
 import { loadConfig } from './config.js';
@@ -57,43 +56,39 @@ export class McpHttpServer {
       return { status: 'ok', sessions: this.sessionManager.sessionCount };
     });
 
-    // ─── SSE stream ───
+    // ─── SSE stream (GET endpoint for server → client push) ───
     this.app.get('/mcp/sse', async (request, reply) => {
-      const sessionId = (request.headers['mcp-session-id'] as string) ?? '';
-      const transport = sessionId ? this.transports.get(sessionId) : undefined;
-      if (!transport) {
-        // No transport yet — this is the initial SSE connection.
-        // The client will POST /mcp/message to initialize.
-        reply.raw.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        });
-        reply.raw.flushHeaders();
-        // Keep the connection alive — it will be used by the transport
-        // created during POST /mcp/message initialization.
-        // We store a reference and send events when the transport is ready.
-        request.raw.on('close', () => {
-          // Client disconnected
-        });
-        return reply;
+      // Auth check before delegating to transport
+      const authError = this.checkAuth(request);
+      if (authError) {
+        return reply.status(401).send({ error: authError });
       }
 
-      // Attach SSE to existing transport
+      const sessionId = (request.headers['mcp-session-id'] as string) ?? '';
+      const transport = sessionId ? this.transports.get(sessionId) : undefined;
+
+      // Set up SSE headers
       reply.raw.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       });
       reply.raw.flushHeaders();
 
-      const writer = {
-        write: (chunk: string) => {
-          reply.raw.write(`event: message\ndata: ${chunk}\n\n`);
-        },
-      };
-      await transport.startSSE(writer as any);
-      return reply;
+      if (!transport) {
+        // No transport yet — this is the initial SSE connection.
+        // The client will POST /mcp/message to initialize a session.
+        // Keep connection open; transport events will be written later.
+        request.raw.on('close', () => {
+          // Client disconnected
+        });
+        // Hijack reply so Fastify doesn't send its own response
+        return reply;
+      }
+
+      // Delegate to transport — SDK 1.29.0 uses handleRequest for SSE setup
+      await transport.handleRequest(request.raw, reply.raw);
     });
 
     // ─── MCP message endpoint ───
@@ -144,26 +139,15 @@ export class McpHttpServer {
         // Connect the McpServer to the transport
         await session.server.connect(transport);
 
-        // Set up SSE for this transport
-        const sseWriter = {
-          write: (chunk: string) => {
-            // SSE will be sent via the GET /mcp/sse endpoint
-            // For streamable HTTP, responses come back on the POST
-          },
-        };
-
         transport.onclose = () => {
           this.transports.delete(newId);
           this.sessionManager.close(newId);
         };
       }
 
-      // Handle the MCP request
-      const rawReq = request.raw as IncomingMessage;
-      const rawRes = reply.raw as ServerResponse;
-
+      // Handle the MCP request via SDK-compatible handleRequest pattern
       try {
-        await transport.handleRequest(rawReq, rawRes, request.body as any);
+        await transport.handleRequest(request.raw, reply.raw, request.body as any);
       } catch (err: any) {
         this.app.log.error({ err }, 'MCP request handling failed');
         return reply.status(500).send({
@@ -173,6 +157,8 @@ export class McpHttpServer {
         });
       }
 
+      // Signal Fastify that response was handled by transport
+      reply.raw.end();
       return reply;
     });
   }
