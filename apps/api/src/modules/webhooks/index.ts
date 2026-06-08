@@ -3,7 +3,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { prisma, WebhookProvider, WebhookAction } from '@codegraph/db';
+import { prisma, Prisma, WebhookProvider, WebhookAction } from '@codegraph/db';
 import { enqueueIndexJob } from '../../lib/scheduler.js';
 import { createWebhookEventLog } from '../../lib/webhook-logger.js';
 import { acquireProjectLock } from '../../lib/concurrency.js';
@@ -360,10 +360,12 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
       if (!resolvedAlt) {
         return reply.code(200).send({ received: true, ignored: true, reason: 'no matching project' });
       }
-      Object.assign(resolved, resolvedAlt);
+      if (resolvedAlt) {
+        Object.assign(resolved as any, resolvedAlt);
+      }
     }
 
-    const { project, config } = resolved;
+    const { project, config } = resolved as any;
 
     // Verify token
     const secret = config?.secret ?? process.env.GITLAB_WEBHOOK_SECRET ?? '';
@@ -706,7 +708,7 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
           provider: body.provider as WebhookProvider,
           secret: body.secret ?? null,
           enabled: body.enabled,
-          branchFilter: body.branchFilter ?? null,
+          branchFilter: (body.branchFilter as any) ?? Prisma.DbNull,
           indexType: body.indexType as any,
           priority: body.priority,
           dedupWindowSec: body.dedupWindowSec,

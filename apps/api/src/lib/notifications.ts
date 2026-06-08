@@ -50,7 +50,10 @@ async function sendWeComNotification(payload: NotificationPayload): Promise<bool
   const webhookUrl = process.env.WECOM_WEBHOOK_URL;
   if (!webhookUrl) return false;
 
-  const { type, projectName, projectId, status, error, duration, stats, usagePercent, approvalRequester } = payload;
+  const {
+    type, projectName, projectId, status, error, duration, stats,
+    usagePercent, usageCurrent, usageLimit, approvalRequester, approvalRole, approvalTarget,
+  } = payload;
 
   let title: string;
   let content: string;
@@ -122,7 +125,10 @@ async function sendDingTalkNotification(payload: NotificationPayload): Promise<b
     webhookUrl = `${webhookUrl}${sep}timestamp=${timestamp}&sign=${sign}`;
   }
 
-  const { type, projectName, projectId, status, error, duration, stats, usagePercent, approvalRequester } = payload;
+  const {
+    type, projectName, projectId, status, error, duration, stats,
+    usagePercent, usageCurrent, usageLimit, approvalRequester, approvalRole, approvalTarget,
+  } = payload;
 
   let title: string;
   let text: string;
