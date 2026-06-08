@@ -123,17 +123,39 @@ export async function handleBuildIndex(job: Job): Promise<IndexResult> {
       },
     });
 
+    // 12. Write audit log for build completion
+    const team = await prisma.team.findUnique({ where: { id: project.teamId }, include: { organization: true } });
+    if (team) {
+      await prisma.auditLog.create({
+        data: {
+          organizationId: team.organizationId,
+          userId: 'system',
+          action: 'BUILD_INDEX_COMPLETED',
+          entityType: 'index',
+          entityId: indexId ?? undefined,
+          details: {
+            projectId,
+            type: data.type,
+            trigger: data.trigger,
+            filesScanned: indexResult.stats.filesScanned,
+            symbolsIndexed: indexResult.stats.symbolsIndexed,
+            durationMs: indexResult.stats.durationMs,
+          },
+        },
+      });
+    }
+
     console.log(`[build-index] Job ${data.jobId} completed successfully`);
 
     return indexResult;
-  } catch (error: any) {
+  } catch (buildError: any) {
     // Update index status to FAILED
     if (indexId) {
       await prisma.index.update({
         where: { id: indexId },
         data: {
           status: 'FAILED',
-          error: error.message,
+          error: buildError.message,
         },
       }).catch(() => {});
     }
@@ -143,14 +165,34 @@ export async function handleBuildIndex(job: Job): Promise<IndexResult> {
       where: { id: data.jobId },
       data: {
         status: 'FAILED',
-        error: error.message,
+        error: buildError.message,
         retries: { increment: 1 },
       },
     }).catch(() => {});
 
-    throw error;
+    // Write audit log for build failure
+    try {
+      const project = await prisma.project.findUnique({ where: { id: projectId }, include: { team: { include: { organization: true } } } });
+      if (project?.team?.organizationId) {
+        await prisma.auditLog.create({
+          data: {
+            organizationId: project.team.organizationId,
+            userId: 'system',
+            action: 'BUILD_INDEX_FAILED',
+            entityType: 'index',
+            entityId: indexId ?? undefined,
+            details: { projectId, type: data.type, trigger: data.trigger, error: buildError?.message ?? 'unknown' },
+          },
+        });
+      }
+    } catch (auditErr) {
+      console.error('[build-index] Failed to write audit log:', auditErr);
+    }
+
+    throw buildError;
   } finally {
-    // 12. Cleanup temp files
+
+    // 13. Cleanup temp files
     if (tmpDir) {
       await cleanupTemp(tmpDir);
     }

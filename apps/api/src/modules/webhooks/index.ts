@@ -7,6 +7,7 @@ import { prisma, WebhookProvider, WebhookAction } from '@codegraph/db';
 import { enqueueIndexJob } from '../../lib/scheduler.js';
 import { createWebhookEventLog } from '../../lib/webhook-logger.js';
 import { acquireProjectLock } from '../../lib/concurrency.js';
+import { logAudit } from '../audit/index.js';
 
 // ─── HMAC Verification ───────────────────────────────────────────────
 
@@ -712,11 +713,10 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
         },
       });
 
-      const { createAuditLog } = await import('../../lib/audit.js');
-      await createAuditLog({
+      await logAudit({
         organizationId: project.team.organizationId,
         userId: request.userId,
-        action: 'webhook_config:created',
+        action: 'CREATE_PROJECT',
         entityType: 'webhook_config',
         entityId: config.id,
         details: { provider: body.provider, branchFilter: body.branchFilter },
@@ -766,11 +766,10 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
         data: body,
       });
 
-      const { createAuditLog } = await import('../../lib/audit.js');
-      await createAuditLog({
+      await logAudit({
         organizationId: config.project.team.organizationId,
         userId: request.userId,
-        action: 'webhook_config:updated',
+        action: 'UPDATE_PROJECT',
         entityType: 'webhook_config',
         entityId: configId,
         details: body,
@@ -805,11 +804,10 @@ export default async function webhookRoutes(fastify: FastifyInstance) {
 
       await prisma.webhookConfig.delete({ where: { id: configId } });
 
-      const { createAuditLog } = await import('../../lib/audit.js');
-      await createAuditLog({
+      await logAudit({
         organizationId: config.project.team.organizationId,
         userId: request.userId,
-        action: 'webhook_config:deleted',
+        action: 'DELETE_PROJECT',
         entityType: 'webhook_config',
         entityId: configId,
         ipAddress: (request as any).ip,

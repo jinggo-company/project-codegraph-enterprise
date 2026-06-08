@@ -1,4 +1,4 @@
-// Audit logging helper
+// Audit logging helper — backward-compatible wrapper around the new logAudit
 import { prisma } from '@codegraph/db';
 
 export interface AuditEntry {
@@ -26,3 +26,9 @@ export async function createAuditLog(entry: AuditEntry): Promise<void> {
     },
   });
 }
+
+/**
+ * Re-export from the canonical audit module for direct import:
+ *   import { logAudit } from '../audit/index.js';
+ */
+export { logAudit } from '../modules/audit/index.js';

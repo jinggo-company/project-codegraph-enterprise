@@ -45,3 +45,51 @@ export async function createWebhookEventLog(entry: WebhookEventEntry): Promise<v
     console.error('[webhook-logger] Failed to create event log:', err);
   }
 }
+
+/**
+ * Map WebhookAction → AuditAction for parallel audit logging.
+ */
+function webhookActionToAudit(action: WebhookAction): string {
+  switch (action) {
+    case 'QUEUED': return 'BUILD_INDEX';
+    case 'IGNORED': return 'WEBHOOK_IGNORED';
+    case 'REJECTED': return 'WEBHOOK_REJECTED';
+    case 'ERROR': return 'BUILD_INDEX_FAILED';
+    default: return 'BUILD_INDEX';
+  }
+}
+
+/**
+ * Create a webhook event log AND write a corresponding audit log entry
+ * so that F6 audit queries also cover webhook events.
+ */
+export async function createWebhookEventLogWithAudit(
+  entry: WebhookEventEntry & { organizationId?: string; userId?: string },
+): Promise<void> {
+  await createWebhookEventLog(entry);
+
+  if (!entry.organizationId) return;
+
+  try {
+    await prisma.auditLog.create({
+      data: {
+        organizationId: entry.organizationId,
+        userId: entry.userId ?? 'system',
+        action: webhookActionToAudit(entry.action as any),
+        entityType: 'webhook',
+        entityId: entry.indexId ?? entry.projectId ?? undefined,
+        ipAddress: entry.ip,
+        details: {
+          provider: entry.provider,
+          event: entry.event,
+          action: entry.action,
+          branch: entry.branch,
+          commit: entry.commit,
+          reason: entry.reason,
+        },
+      },
+    });
+  } catch {
+    // Audit write failure should not break webhook processing
+  }
+}

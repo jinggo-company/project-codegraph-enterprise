@@ -127,6 +127,15 @@ export async function registerBillingModule(app: FastifyInstance) {
         details: { invoiceId: invoice.id, paymentMethod },
       });
 
+      await logAudit({
+        userId: request.user?.id ?? 'unknown',
+        action: 'PAYMENT_INITIATED',
+        entityType: 'invoice',
+        entityId: invoice.id,
+        organizationId,
+        details: { amount: planDef.price, provider: paymentMethod },
+      });
+
       return reply.send({ success: true, plan, redirectUrl });
     },
   );

@@ -128,7 +128,7 @@ describe('WRK-003: Task Retry', () => {
     const buildIndexContent = readSourceFile('jobs/build-index.ts');
     // On failure, should update index to FAILED and increment retry count
     expect(buildIndexContent).toContain('status: \'FAILED\'');
-    expect(buildIndexContent).toContain('error: error.message');
+    expect(buildIndexContent).toContain('error: buildError.message');
     expect(buildIndexContent).toContain('retries');
   });
 
@@ -173,7 +173,7 @@ describe('WRK-004: Timeout Handling', () => {
   it('WRK-004: Failed jobs mark index as FAILED with error message', () => {
     const buildIndexContent = readSourceFile('jobs/build-index.ts');
     expect(buildIndexContent).toContain('status: \'FAILED\'');
-    expect(buildIndexContent).toContain('error: error.message');
+    expect(buildIndexContent).toContain('error: buildError.message');
   });
 });
 
