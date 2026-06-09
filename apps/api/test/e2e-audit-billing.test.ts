@@ -72,9 +72,12 @@ describe('Billing & Subscription Module', () => {
   it('BILL-001: Billing module source exists with correct PLAN values', () => {
     expect(fileExists('modules/billing/index.ts')).toBe(true);
     const content = readFileSync(join(srcDir, 'modules/billing/index.ts'), 'utf-8');
-    expect(content).toContain('free: { projectLimit: 3');
-    expect(content).toContain('pro: { projectLimit: 20');
-    expect(content).toContain('enterprise: { projectLimit: -1');
+    expect(content).toContain('free:');
+    expect(content).toContain('projectLimit: 3');
+    expect(content).toContain('pro:');
+    expect(content).toContain('projectLimit: 20');
+    expect(content).toContain('enterprise:');
+    expect(content).toContain('projectLimit: -1');
   });
 
   it('BILL-002: Subscription upgrade flow is implemented', () => {

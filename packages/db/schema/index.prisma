@@ -326,6 +326,7 @@ model Subscription {
   plan           PlanType       @default(FREE)
   status         SubscriptionStatus @default(ACTIVE)
   currentPeriodEnd DateTime?
+  cancelAtPeriodEnd Boolean     @default(false)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -353,8 +354,9 @@ model Invoice {
   amount         Int      // in cents
   currency       String   @default("CNY")
   status         InvoiceStatus @default(PENDING)
-  provider       String?  // alipay, stripe
+  provider       String?  // wechat, alipay, stripe
   providerRef    String?  // external payment reference
+  paidAt         DateTime?
   createdAt      DateTime @default(now())
 
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

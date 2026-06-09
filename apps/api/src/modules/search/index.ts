@@ -8,7 +8,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '@codegraph/db';
-import { createAuditLog } from '../../lib/audit.js';
+import { logAudit } from '../audit/index.js';
 import { CrossProjectEngine } from '@codegraph/engine';
 
 const INDEX_DIR = process.env.CODEGRAPH_INDEX_DIR ?? './data/indexes';
@@ -107,15 +107,21 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       return { ...base, method: r.method, path: r.path, handler: r.handler, file: r.file, framework: r.framework };
     });
 
-    // Log the search
-    await createAuditLog({
-      organizationId: orgId,
+    // Log the search query
+    const auditActionMap: Record<string, 'QUERY_SEARCH' | 'QUERY_SYMBOL' | 'QUERY_CALLERS'> = {
+      symbol: 'QUERY_SYMBOL',
+      fulltext: 'QUERY_SEARCH',
+      caller: 'QUERY_CALLERS',
+      route: 'QUERY_SEARCH',
+    };
+    await logAudit({
       userId: request.userId,
-      action: 'search:cross_project',
-      entityType: 'search',
-      entityId: undefined as unknown as string | undefined,
+      action: auditActionMap[query.type] ?? 'QUERY_SEARCH',
+      entityType: 'query',
+      organizationId: orgId,
       details: { query: query.q, type: query.type, projectCount: targetProjectIds.length, resultCount: results.length },
       ipAddress: (request as any).ip,
+      userAgent: (request as any).headers?.['user-agent'],
     });
 
     return reply.send({
