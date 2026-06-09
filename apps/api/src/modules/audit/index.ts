@@ -87,10 +87,16 @@ export async function logAudit(input: AuditLogInput): Promise<void> {
 
 /**
  * Escape a field value for CSV output.
+ * Includes CSV injection prevention for values starting with = + - @
+ * (see: https://owasp.org/www-community/attacks/CSV_Injection)
  */
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return '';
   const str = String(value);
+  // CSV injection prevention: values starting with = + - @ may execute formulas in spreadsheet apps
+  if (/^[=+\-@]/.test(str)) {
+    return `\t${str}`; // prefix with tab to neutralize
+  }
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
